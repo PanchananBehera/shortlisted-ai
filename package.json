@@ -1,0 +1,18 @@
+{
+  "name": "ai-job-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-Powered Job Application Tracker",
+  "scripts": {
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm run dev",
+    "dev": "concurrently \"npm run server\" \"npm run client\""
+  },
+  "keywords": ["job-tracker", "ai", "mern", "placement"],
+  "author": "Chintu",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

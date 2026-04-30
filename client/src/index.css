@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Soft cream background & base typography */
+  body {
+    @apply bg-surface-light text-gray-800 font-sans antialiased;
+  }
+
+  /* Elegant headings */
+  h1, h2, h3 {
+    @apply font-serif text-gray-900 font-medium tracking-tight;
+  }
+}
