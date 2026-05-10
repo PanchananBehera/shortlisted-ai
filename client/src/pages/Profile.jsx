@@ -1,5 +1,6 @@
+// src/pages/Profile.jsx
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext'; // Adjust path if needed
+import { useAuth } from '../context/AuthContext';
 import api from '../utils/axios';
 
 const Profile = () => {
@@ -43,28 +44,27 @@ const Profile = () => {
   };
 
   return (
-    // ✅ FIX: Centered container with max-width
-    <div className="max-w-5xl mx-auto py-8 px-4 space-y-8">
+    <div className="max-w-5xl mx-auto py-12 px-4 space-y-8 bg-[#fafaf8] dark:bg-slate-950 min-h-screen transition-colors duration-300">
       
-      {/* ✅ HEADER BANNER & AVATAR SECTION */}
+      {/* HEADER BANNER & AVATAR SECTION */}
       <div className="relative">
-        {/* Green Gradient Banner */}
-        <div className="h-40 md:h-48 bg-gradient-to-r from-brand-500 to-emerald-400 rounded-3xl shadow-lg w-full"></div>
+        {/* Green Gradient Banner - Anthropic Style */}
+        <div className="h-40 md:h-48 bg-gradient-to-r from-green-500 to-emerald-400 dark:from-green-600 dark:to-emerald-500 rounded-3xl shadow-lg w-full transition-colors"></div>
         
         {/* Avatar & Name Container (Overlaps Banner) */}
         <div className="absolute -bottom-12 md:-bottom-16 left-6 md:left-10 flex flex-col md:flex-row items-center md:items-end gap-4">
           
           {/* Avatar Circle */}
-          <div className="w-24 h-24 md:w-32 md:h-32 rounded-full bg-white p-1.5 shadow-xl border-4 border-white z-10">
-            <div className="w-full h-full rounded-full bg-gray-100 flex items-center justify-center text-3xl md:text-4xl font-bold text-brand-600 overflow-hidden">
+          <div className="w-24 h-24 md:w-32 md:h-32 rounded-full bg-white dark:bg-slate-900 p-1.5 shadow-xl border-4 border-white dark:border-slate-900 z-10 transition-colors">
+            <div className="w-full h-full rounded-full bg-gray-50 dark:bg-slate-800 flex items-center justify-center text-3xl md:text-4xl font-bold text-green-600 dark:text-green-400 overflow-hidden transition-colors">
               {profileData.name?.charAt(0).toUpperCase() || 'U'}
             </div>
           </div>
 
           {/* Name & Title */}
           <div className="mb-2 text-center md:text-left">
-            <h1 className="text-2xl md:text-3xl font-serif font-bold text-gray-900">{profileData.name || 'User Name'}</h1>
-            <p className="text-gray-500 font-medium">B.Tech CSE Student • Placement Ready</p>
+            <h1 className="text-2xl md:text-3xl font-serif font-bold text-gray-900 dark:text-white transition-colors">{profileData.name || 'User Name'}</h1>
+            <p className="text-gray-600 dark:text-gray-400 font-medium transition-colors">B.Tech CSE Student • Placement Ready</p>
           </div>
         </div>
 
@@ -74,19 +74,19 @@ const Profile = () => {
             onClick={() => isEditing ? handleSave() : setIsEditing(true)}
             className={`px-5 py-2 rounded-full font-medium transition-all shadow-md flex items-center gap-2 ${
               isEditing
-                ? 'bg-emerald-500 text-white hover:bg-emerald-600'
-                : 'bg-white text-brand-600 hover:bg-brand-50'
-            }`}
+                ? 'bg-green-500 dark:bg-green-600 text-white hover:bg-green-600 dark:hover:bg-green-500'
+                : 'bg-white dark:bg-slate-900 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-slate-800 border border-gray-200/50 dark:border-slate-700'
+            } transition-colors`}
           >
             {isEditing ? '💾 Save' : '✏️ Edit Profile'}
           </button>
         </div>
       </div>
 
-      {/* ✅ SPACER for Overlap */}
+      {/* SPACER for Overlap */}
       <div className="h-16 md:h-20"></div>
 
-      {/* ✅ GRID LAYOUT FOR CARDS */}
+      {/* GRID LAYOUT FOR CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
         {/* Contact Info */}
@@ -117,18 +117,18 @@ const Profile = () => {
               value={profileData.skills.join(', ')}
               onChange={handleSkillsChange}
               placeholder="React, Node.js, MongoDB, DSA..."
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-brand-400 text-sm transition-all"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200/50 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 outline-none focus:ring-2 focus:ring-green-500 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-all transition-colors"
             />
           ) : (
             <div className="flex flex-wrap gap-2">
               {profileData.skills.length > 0 ? (
                 profileData.skills.map((skill, i) => (
-                  <span key={i} className="px-3 py-1.5 bg-brand-50 text-brand-700 rounded-full text-sm font-medium border border-brand-100">
+                  <span key={i} className="px-3 py-1.5 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-sm font-medium border border-green-100 dark:border-green-800 transition-colors">
                     {skill}
                   </span>
                 ))
               ) : (
-                <span className="text-gray-400 text-sm italic">No skills added yet</span>
+                <span className="text-gray-500 dark:text-gray-400 text-sm italic transition-colors">No skills added yet</span>
               )}
             </div>
           )}
@@ -152,11 +152,11 @@ const Profile = () => {
             onChange={handleChange}
             rows="3"
             placeholder="Brief summary about your goals..."
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-brand-400 text-sm resize-none transition-all"
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-200/50 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 outline-none focus:ring-2 focus:ring-green-500 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 resize-none transition-all transition-colors"
           />
         ) : (
-          <p className="text-gray-600 leading-relaxed text-sm">
-            {profileData.bio || "No summary added yet. Click 'Edit Profile' to add one."}
+          <p className="text-gray-600 dark:text-gray-400 leading-relaxed text-sm transition-colors">
+            {profileData.bio || <span className="text-gray-500 dark:text-gray-400 font-normal italic transition-colors">No summary added yet. Click 'Edit Profile' to add one.</span>}
           </p>
         )}
       </Card>
@@ -165,15 +165,15 @@ const Profile = () => {
 };
 
 const Card = ({ title, children }) => (
-  <div className="bg-white p-5 md:p-6 rounded-3xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-    <h2 className="text-lg font-semibold text-gray-900 mb-4">{title}</h2>
+  <div className="bg-white dark:bg-slate-900 p-5 md:p-6 rounded-2xl shadow-sm border border-gray-200/50 dark:border-slate-800 hover:shadow-md transition-all transition-colors">
+    <h2 className="text-lg font-serif font-semibold text-gray-900 dark:text-white mb-4 transition-colors">{title}</h2>
     {children}
   </div>
 );
 
 const InfoField = ({ label, value, isEditing, name, onChange, type = "text", placeholder = "" }) => (
   <div>
-    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">{label}</label>
+    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5 transition-colors">{label}</label>
     {isEditing ? (
       <input
         type={type}
@@ -181,11 +181,11 @@ const InfoField = ({ label, value, isEditing, name, onChange, type = "text", pla
         value={value}
         onChange={onChange}
         placeholder={placeholder}
-        className="w-full px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-brand-400 text-sm transition-all"
+        className="w-full px-4 py-2 rounded-xl border border-gray-200/50 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 outline-none focus:ring-2 focus:ring-green-500 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-all transition-colors"
       />
     ) : (
-      <p className="text-gray-800 font-medium text-sm break-all">
-        {value || <span className="text-gray-400 font-normal italic">Not provided</span>}
+      <p className="text-gray-900 dark:text-white font-medium text-sm break-all transition-colors">
+        {value || <span className="text-gray-500 dark:text-gray-400 font-normal italic transition-colors">Not provided</span>}
       </p>
     )}
   </div>

@@ -1,31 +1,15 @@
-# Dependencies
-node_modules/
-package-lock.json
+# Ignore ALL .env files in any subfolder
+**/.env
+**/.env.production
+**/.env.local
 
-# Environment variables
-.env
-.env.local
-.env.production
+# Ignore node_modules everywhere
+**/node_modules
 
-# Build outputs
-dist/
-build/
+# Ignore build folders
+dist
+.vite
 
 # OS files
 .DS_Store
 Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-
-# Logs
-*.log
-npm-debug.log*
-
-# Testing
-coverage/
-
-# Temporary files
-*.tmp
-*.temp

@@ -1,7 +1,8 @@
+// src/pages/Register.jsx
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import api from '../utils/axios'; // ✅ Import our configured axios instance
+import api from '../utils/axios';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -17,14 +18,13 @@ const Register = () => {
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-    if (error) setError(''); // Clear error when user starts typing
+    if (error) setError('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    // Client-side validation
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match. Please try again.');
       return;
@@ -37,24 +37,17 @@ const Register = () => {
     setLoading(true);
 
     try {
-      // ✅ REAL API CALL: Register endpoint
       const res = await api.post('/auth/register', {
         name: formData.name,
         email: formData.email,
         password: formData.password
       });
 
-      // Extract token and user data from response
       const { token, ...userData } = res.data;
-      
-      // Save auth state via AuthContext (stores in localStorage)
       login(token, userData);
-      
-      // Redirect to dashboard
       navigate('/dashboard');
       
     } catch (err) {
-      // 🔒 Security: Show backend error message if available, else generic
       setError(err.response?.data?.message || 'Registration failed. Email may already be in use.');
     } finally {
       setLoading(false);
@@ -62,28 +55,30 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen bg-surface-light flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-[#fafaf8] dark:bg-slate-950 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 transition-colors duration-300">
       <div className="max-w-md w-full">
         
         {/* Card Container */}
-        <div className="bg-surface-card rounded-3xl shadow-soft p-8 sm:p-10">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm p-8 sm:p-10 border border-gray-200/50 dark:border-slate-800 transition-colors">
           
           {/* Header */}
           <div className="text-center mb-8">
             <Link to="/" className="inline-flex items-center justify-center mb-4 group">
-              <span className="text-4xl group-hover:scale-110 transition-transform duration-300">🌿</span>
+              <div className="w-14 h-14 bg-green-500 dark:bg-green-600 rounded-xl flex items-center justify-center shadow-md group-hover:scale-105 transition-all">
+                <span className="text-2xl">🌿</span>
+              </div>
             </Link>
-            <h1 className="text-3xl font-serif text-gray-900 mb-2">
+            <h1 className="text-3xl font-serif text-gray-900 dark:text-white mb-2 transition-colors">
               Create Your Account
             </h1>
-            <p className="text-gray-500">
+            <p className="text-gray-600 dark:text-gray-400 transition-colors">
               Start tracking your placement journey today
             </p>
           </div>
 
           {/* Error Message */}
           {error && (
-            <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-sm text-center animate-pulse">
+            <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl text-rose-700 dark:text-rose-300 text-sm text-center transition-colors">
               {error}
             </div>
           )}
@@ -93,7 +88,7 @@ const Register = () => {
             
             {/* Full Name Field */}
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Full Name
               </label>
               <input
@@ -104,14 +99,14 @@ const Register = () => {
                 autoComplete="name"
                 value={formData.name}
                 onChange={handleChange}
-                className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-brand-400 focus:border-transparent outline-none transition-all duration-200 bg-gray-50 focus:bg-white"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                 placeholder="Chintu"
               />
             </div>
 
             {/* Email Field */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Email Address
               </label>
               <input
@@ -122,14 +117,14 @@ const Register = () => {
                 autoComplete="email"
                 value={formData.email}
                 onChange={handleChange}
-                className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-brand-400 focus:border-transparent outline-none transition-all duration-200 bg-gray-50 focus:bg-white"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                 placeholder="you@university.edu"
               />
             </div>
 
             {/* Password Field */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Password
               </label>
               <input
@@ -141,15 +136,15 @@ const Register = () => {
                 minLength="8"
                 value={formData.password}
                 onChange={handleChange}
-                className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-brand-400 focus:border-transparent outline-none transition-all duration-200 bg-gray-50 focus:bg-white"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                 placeholder="••••••••"
               />
-              <p className="mt-1 text-xs text-gray-400">Minimum 8 characters</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-500 transition-colors">Minimum 8 characters</p>
             </div>
 
             {/* Confirm Password Field */}
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Confirm Password
               </label>
               <input
@@ -159,7 +154,7 @@ const Register = () => {
                 required
                 value={formData.confirmPassword}
                 onChange={handleChange}
-                className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-brand-400 focus:border-transparent outline-none transition-all duration-200 bg-gray-50 focus:bg-white"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
                 placeholder="••••••••"
               />
             </div>
@@ -171,13 +166,13 @@ const Register = () => {
                 name="terms"
                 type="checkbox"
                 required
-                className="w-4 h-4 mt-1 rounded border-gray-300 text-brand-600 focus:ring-brand-400"
+                className="w-4 h-4 mt-1 rounded border-gray-300 dark:border-slate-600 text-green-600 dark:text-green-400 focus:ring-green-500 bg-gray-50 dark:bg-slate-800"
               />
-              <label htmlFor="terms" className="ml-2 text-sm text-gray-600">
+              <label htmlFor="terms" className="ml-2 text-sm text-gray-600 dark:text-gray-400 transition-colors">
                 I agree to the{' '}
-                <a href="#" className="text-brand-600 hover:underline">Terms of Service</a>
+                <a href="#" className="text-green-600 dark:text-green-400 hover:underline transition-colors">Terms of Service</a>
                 {' '}and{' '}
-                <a href="#" className="text-brand-600 hover:underline">Privacy Policy</a>
+                <a href="#" className="text-green-600 dark:text-green-400 hover:underline transition-colors">Privacy Policy</a>
               </label>
             </div>
 
@@ -185,7 +180,7 @@ const Register = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-brand-400 text-white py-3 px-4 rounded-full font-semibold hover:bg-brand-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-400 transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed shadow-md hover:shadow-lg flex items-center justify-center"
+              className="w-full bg-green-500 dark:bg-green-600 text-white py-3 px-4 rounded-full font-semibold hover:bg-green-600 dark:hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 dark:focus:ring-offset-slate-900 transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed shadow-md hover:shadow-lg flex items-center justify-center"
             >
               {loading ? (
                 <>
@@ -205,16 +200,16 @@ const Register = () => {
           <div className="mt-8">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200"></div>
+                <div className="w-full border-t border-gray-200/50 dark:border-slate-800 transition-colors"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-surface-card text-gray-500">
+                <span className="px-4 bg-white dark:bg-slate-900 text-gray-500 dark:text-gray-400 transition-colors">
                   Already have an account?
                 </span>
               </div>
             </div>
             <div className="mt-6 text-center">
-              <Link to="/login" className="text-brand-600 hover:text-brand-700 font-semibold transition-colors">
+              <Link to="/login" className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 font-semibold transition-colors">
                 Sign in instead →
               </Link>
             </div>
@@ -222,8 +217,8 @@ const Register = () => {
         </div>
 
         {/* Footer Note */}
-        <p className="mt-8 text-center text-sm text-gray-500">
-          Built for GIET University students • Free forever • No credit card required
+        <p className="mt-8 text-center text-sm text-gray-500 dark:text-gray-500 transition-colors">
+          Built for tech aspirants • Free forever • No credit card required
         </p>
       </div>
     </div>

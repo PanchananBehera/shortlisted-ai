@@ -1,3 +1,4 @@
+// src/App.jsx
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
@@ -14,6 +15,9 @@ import ApplicationsList from './pages/ApplicationsList';
 import ApplicationForm from './pages/ApplicationForm';
 import Profile from './pages/Profile';
 import ResumeAnalyzer from './pages/ResumeAnalyzer';
+import ATSChecker from './pages/ATSChecker';
+import History from './pages/History';
+import AboutUs from './pages/AboutUs'
 
 // Main App Component
 function App() {
@@ -103,6 +107,35 @@ function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* ATS Checker Route */}
+          <Route
+            path="/ats-checker"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <ATSChecker />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ✅ NEW: History Route */}
+          <Route
+            path="/history"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <History />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/about" element={
+          <MainLayout>
+            <AboutUs />
+          </MainLayout>
+        } />
         </Routes>
       </AuthProvider>
     </Router>

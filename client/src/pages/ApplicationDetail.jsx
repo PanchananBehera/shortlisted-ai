@@ -1,3 +1,4 @@
+// src/pages/ApplicationDetail.jsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../utils/axios';
@@ -7,7 +8,7 @@ const ApplicationDetail = () => {
   const navigate = useNavigate();
 
   const [application, setApplication] = useState(null);
-  const [userProfile, setUserProfile] = useState(null); // ✅ Added profile state
+  const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState(null);
@@ -19,7 +20,7 @@ const ApplicationDetail = () => {
 
   useEffect(() => {
     fetchApplication();
-    fetchUserProfile(); // ✅ Fetch profile on mount
+    fetchUserProfile();
   }, [id]);
 
   const fetchApplication = async () => {
@@ -34,7 +35,6 @@ const ApplicationDetail = () => {
     }
   };
 
-  // ✅ Fetch user profile data for personalization
   const fetchUserProfile = async () => {
     try {
       const res = await api.get('/user/profile');
@@ -46,14 +46,12 @@ const ApplicationDetail = () => {
     }
   };
 
-  // ✨ AI Cover Letter Generator (Fixed Regenerate + Profile Integration)
   const generateCoverLetter = async () => {
     if (!application?.jobDescription) {
       setError('Please add a job description first to generate a cover letter');
       return;
     }
 
-    // ✅ Clear previous result BEFORE loading to force UI refresh
     setAiResult(null);
     setAiLoading(true);
     setAiType('cover-letter');
@@ -61,7 +59,6 @@ const ApplicationDetail = () => {
     setCopied(false);
 
     try {
-      // ✅ Build personalized prompt with profile data
       const profileContext = userProfile ? {
         fullName: userProfile.fullName,
         jobTitle: userProfile.jobTitle,
@@ -76,8 +73,8 @@ const ApplicationDetail = () => {
         companyName: application.companyName,
         jobRole: application.jobRole,
         jobDescription: application.jobDescription,
-        profile: profileContext, // ✅ Send profile to backend
-        regenerate: aiResult !== null // ✅ Tell backend if this is a regeneration
+        profile: profileContext,
+        regenerate: aiResult !== null
       });
       
       setAiResult(res.data.coverLetter);
@@ -88,7 +85,6 @@ const ApplicationDetail = () => {
     }
   };
 
-  // ❓ AI Interview Q&A Generator (Fixed "New Questions" + Profile Integration)
   const generateInterviewQA = async () => {
     if (!application?.jobDescription) {
       setError('Please add a job description first to generate interview questions');
@@ -102,12 +98,10 @@ const ApplicationDetail = () => {
     setActiveFilter('All');
 
     try {
-      // ✅ Collect existing questions to avoid duplicates
       const existingQuestions = aiResult && aiType === 'interview-qa' 
         ? aiResult.map(q => q.question) 
         : [];
 
-      // ✅ Build personalized context
       const profileContext = userProfile ? {
         fullName: userProfile.fullName,
         jobTitle: userProfile.jobTitle,
@@ -119,9 +113,9 @@ const ApplicationDetail = () => {
         companyName: application.companyName,
         jobRole: application.jobRole,
         jobDescription: application.jobDescription,
-        profile: profileContext, // ✅ Send profile to backend
-        existingQuestions: existingQuestions, // ✅ Send existing questions to avoid repeats
-        regenerate: existingQuestions.length > 0 // ✅ Tell backend this is a "new set" request
+        profile: profileContext,
+        existingQuestions: existingQuestions,
+        regenerate: existingQuestions.length > 0
       });
       
       setAiResult(res.data.questions);
@@ -176,31 +170,27 @@ const ApplicationDetail = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Get filtered questions
   const getFilteredQuestions = () => {
     if (!Array.isArray(aiResult)) return [];
     if (activeFilter === 'All') return aiResult;
     return aiResult.filter(q => q.category === activeFilter);
   };
 
-  // Get unique categories from questions
   const getCategories = () => {
     if (!Array.isArray(aiResult)) return [];
     const cats = [...new Set(aiResult.map(q => q.category).filter(Boolean))];
     return ['All', ...cats];
   };
 
-  // Difficulty badge colors
   const difficultyColor = (diff) => {
     switch (diff?.toLowerCase()) {
-      case 'easy': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-      case 'medium': return 'bg-amber-100 text-amber-700 border-amber-200';
-      case 'hard': return 'bg-rose-100 text-rose-700 border-rose-200';
-      default: return 'bg-gray-100 text-gray-600 border-gray-200';
+      case 'easy': return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800';
+      case 'medium': return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800';
+      case 'hard': return 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800';
+      default: return 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
     }
   };
 
-  // Category icon
   const categoryIcon = (cat) => {
     switch (cat) {
       case 'Technical': return '💻';
@@ -212,31 +202,30 @@ const ApplicationDetail = () => {
     }
   };
 
-  // Category badge color
   const categoryColor = (cat) => {
     switch (cat) {
-      case 'Technical': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'System Design': return 'bg-purple-50 text-purple-700 border-purple-200';
-      case 'Behavioral': return 'bg-teal-50 text-teal-700 border-teal-200';
-      case 'Company-Specific': return 'bg-orange-50 text-orange-700 border-orange-200';
-      case 'HR': return 'bg-pink-50 text-pink-700 border-pink-200';
-      default: return 'bg-gray-50 text-gray-600 border-gray-200';
+      case 'Technical': return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800';
+      case 'System Design': return 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-800';
+      case 'Behavioral': return 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300 dark:border-teal-800';
+      case 'Company-Specific': return 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-800';
+      case 'HR': return 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-900/30 dark:text-pink-300 dark:border-pink-800';
+      default: return 'bg-gray-50 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
     }
   };
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-brand-400"></div>
+      <div className="flex justify-center items-center py-20 bg-[#fafaf8] dark:bg-slate-950 transition-colors">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
       </div>
     );
   }
 
   if (error && !application) {
     return (
-      <div className="text-center py-20">
-        <p className="text-rose-600 text-lg">{error}</p>
-        <Link to="/applications" className="text-brand-600 hover:underline mt-4 inline-block">
+      <div className="text-center py-20 bg-[#fafaf8] dark:bg-slate-950 transition-colors">
+        <p className="text-rose-600 dark:text-rose-400 text-lg transition-colors">{error}</p>
+        <Link to="/applications" className="text-green-600 dark:text-green-400 hover:underline mt-4 inline-block transition-colors">
           ← Back to Applications
         </Link>
       </div>
@@ -244,43 +233,43 @@ const ApplicationDetail = () => {
   }
 
   const statusColors = {
-    'Applied': 'bg-brand-100 text-brand-700',
-    'Interview Scheduled': 'bg-blue-100 text-blue-700',
-    'HR Round': 'bg-purple-100 text-purple-700',
-    'Offer Received': 'bg-amber-100 text-amber-700',
-    'Rejected': 'bg-rose-100 text-rose-700',
-    'Withdrawn': 'bg-gray-100 text-gray-600',
+    'Applied': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+    'Interview Scheduled': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+    'HR Round': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+    'Offer Received': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+    'Rejected': 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300',
+    'Withdrawn': 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
   };
 
   const filteredQuestions = getFilteredQuestions();
   const categories = getCategories();
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-4xl mx-auto space-y-8 bg-[#fafaf8] dark:bg-slate-950 min-h-screen py-12 px-4 transition-colors duration-300">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <button
             onClick={() => navigate('/applications')}
-            className="text-gray-400 hover:text-brand-600 transition mb-2"
+            className="text-gray-400 dark:text-gray-500 hover:text-green-600 dark:hover:text-green-400 transition-colors mb-2"
           >
             ← Back
           </button>
-          <h1 className="text-3xl font-serif text-gray-900">
+          <h1 className="text-4xl font-serif text-gray-900 dark:text-white transition-colors">
             {application?.companyName}
           </h1>
-          <p className="text-gray-600">{application?.jobRole}</p>
+          <p className="text-gray-600 dark:text-gray-400 transition-colors">{application?.jobRole}</p>
         </div>
         <div className="flex gap-2">
           <Link
             to={`/applications/${id}/edit`}
-            className="px-4 py-2 bg-brand-50 text-brand-700 rounded-full hover:bg-brand-100 transition font-medium"
+            className="px-4 py-2 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors font-medium"
           >
             ✏️ Edit
           </Link>
           <button
             onClick={handleDelete}
-            className="px-4 py-2 bg-rose-50 text-rose-600 rounded-full hover:bg-rose-100 transition font-medium"
+            className="px-4 py-2 bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-300 rounded-full hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors font-medium"
           >
             🗑️ Delete
           </button>
@@ -288,44 +277,44 @@ const ApplicationDetail = () => {
       </div>
 
       {/* Application Details Card */}
-      <div className="bg-surface-card p-6 rounded-3xl shadow-soft border border-gray-100">
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-200/50 dark:border-slate-800 transition-colors">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <h3 className="text-sm font-medium text-gray-500 mb-1">Status</h3>
-            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${statusColors[application?.status]}`}>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 transition-colors">Status</h3>
+            <span className={`px-3 py-1 rounded-full text-sm font-semibold transition-colors ${statusColors[application?.status]}`}>
               {application?.status}
             </span>
           </div>
           <div>
-            <h3 className="text-sm font-medium text-gray-500 mb-1">Date Applied</h3>
-            <p className="text-gray-900">{new Date(application?.dateApplied).toLocaleDateString()}</p>
+            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 transition-colors">Date Applied</h3>
+            <p className="text-gray-900 dark:text-white transition-colors">{new Date(application?.dateApplied).toLocaleDateString()}</p>
           </div>
           {application?.followUpDate && (
             <div>
-              <h3 className="text-sm font-medium text-gray-500 mb-1">Follow-up Date</h3>
-              <p className="text-gray-900">{new Date(application?.followUpDate).toLocaleDateString()}</p>
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 transition-colors">Follow-up Date</h3>
+              <p className="text-gray-900 dark:text-white transition-colors">{new Date(application?.followUpDate).toLocaleDateString()}</p>
             </div>
           )}
           {application?.location && (
             <div>
-              <h3 className="text-sm font-medium text-gray-500 mb-1">Location</h3>
-              <p className="text-gray-900">{application.location}</p>
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 transition-colors">Location</h3>
+              <p className="text-gray-900 dark:text-white transition-colors">{application.location}</p>
             </div>
           )}
           {application?.ctc && (
             <div>
-              <h3 className="text-sm font-medium text-gray-500 mb-1">CTC / Package</h3>
-              <p className="text-gray-900">{application.ctc}</p>
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 transition-colors">CTC / Package</h3>
+              <p className="text-gray-900 dark:text-white transition-colors">{application.ctc}</p>
             </div>
           )}
           {application?.applicationLink && (
             <div className="md:col-span-2">
-              <h3 className="text-sm font-medium text-gray-500 mb-1">Application Link</h3>
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 transition-colors">Application Link</h3>
               <a
                 href={application.applicationLink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-brand-600 hover:underline break-all"
+                className="text-green-600 dark:text-green-400 hover:underline break-all transition-colors"
               >
                 {application.applicationLink}
               </a>
@@ -333,16 +322,16 @@ const ApplicationDetail = () => {
           )}
           {application?.jobDescription && (
             <div className="md:col-span-2">
-              <h3 className="text-sm font-medium text-gray-500 mb-2">Job Description</h3>
-              <div className="bg-gray-50 p-4 rounded-2xl text-gray-700 text-sm whitespace-pre-wrap max-h-48 overflow-y-auto">
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 transition-colors">Job Description</h3>
+              <div className="bg-gray-50 dark:bg-slate-800 p-4 rounded-2xl text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap max-h-48 overflow-y-auto transition-colors">
                 {application.jobDescription}
               </div>
             </div>
           )}
           {application?.notes && (
             <div className="md:col-span-2">
-              <h3 className="text-sm font-medium text-gray-500 mb-2">Notes</h3>
-              <p className="text-gray-700 text-sm whitespace-pre-wrap">{application.notes}</p>
+              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 transition-colors">Notes</h3>
+              <p className="text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap transition-colors">{application.notes}</p>
             </div>
           )}
         </div>
@@ -350,11 +339,11 @@ const ApplicationDetail = () => {
 
       {/* ✨ AI Features Section */}
       {application?.jobDescription && (
-        <div className="bg-gradient-to-br from-brand-50 to-emerald-50 p-6 rounded-3xl border border-brand-100">
-          <h2 className="text-xl font-serif text-gray-900 mb-2 flex items-center gap-2">
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 p-6 rounded-2xl border border-green-100 dark:border-green-800 transition-colors">
+          <h2 className="text-xl font-serif text-gray-900 dark:text-white mb-2 flex items-center gap-2 transition-colors">
             <span className="text-2xl">✨</span> AI Assistant
           </h2>
-          <p className="text-gray-600 mb-6 text-sm">
+          <p className="text-gray-600 dark:text-gray-400 mb-6 text-sm transition-colors">
             Generate personalized content powered by Gemini AI — tailored to {application.companyName}'s requirements
           </p>
 
@@ -362,13 +351,13 @@ const ApplicationDetail = () => {
             <button
               onClick={generateCoverLetter}
               disabled={aiLoading}
-              className="p-5 bg-white rounded-2xl shadow-sm hover:shadow-hover transition-all text-left group disabled:opacity-50 border border-transparent hover:border-brand-200"
+              className="p-5 bg-white dark:bg-slate-900 rounded-2xl shadow-sm hover:shadow-lg transition-all text-left group disabled:opacity-50 border border-transparent hover:border-green-200 dark:hover:border-green-800"
             >
               <div className="flex items-center gap-3 mb-2">
                 <span className="text-2xl group-hover:scale-110 transition-transform">✍️</span>
-                <h3 className="font-semibold text-gray-900">Generate Cover Letter</h3>
+                <h3 className="font-semibold text-gray-900 dark:text-white transition-colors">Generate Cover Letter</h3>
               </div>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400 transition-colors">
                 Create a professional, tailored cover letter for {application.companyName}
               </p>
             </button>
@@ -376,13 +365,13 @@ const ApplicationDetail = () => {
             <button
               onClick={generateInterviewQA}
               disabled={aiLoading}
-              className="p-5 bg-white rounded-2xl shadow-sm hover:shadow-hover transition-all text-left group disabled:opacity-50 border border-transparent hover:border-brand-200"
+              className="p-5 bg-white dark:bg-slate-900 rounded-2xl shadow-sm hover:shadow-lg transition-all text-left group disabled:opacity-50 border border-transparent hover:border-green-200 dark:hover:border-green-800"
             >
               <div className="flex items-center gap-3 mb-2">
                 <span className="text-2xl group-hover:scale-110 transition-transform">🎯</span>
-                <h3 className="font-semibold text-gray-900">Interview Prep Kit</h3>
+                <h3 className="font-semibold text-gray-900 dark:text-white transition-colors">Interview Prep Kit</h3>
               </div>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-400 transition-colors">
                 10 unique questions with answers — regenerate for fresh ones each time!
               </p>
             </button>
@@ -390,17 +379,17 @@ const ApplicationDetail = () => {
 
           {/* AI Loading State */}
           {aiLoading && (
-            <div className="flex flex-col items-center justify-center py-10 bg-white/60 rounded-2xl backdrop-blur-sm">
+            <div className="flex flex-col items-center justify-center py-10 bg-white/60 dark:bg-slate-900/60 rounded-2xl backdrop-blur-sm">
               <div className="relative mb-4">
-                <div className="animate-spin rounded-full h-12 w-12 border-4 border-brand-100 border-t-brand-500"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-4 border-green-100 dark:border-green-900/30 border-t-green-500"></div>
                 <span className="absolute inset-0 flex items-center justify-center text-lg">
                   {aiType === 'cover-letter' ? '✍️' : '🎯'}
                 </span>
               </div>
-              <p className="text-gray-700 font-medium">
+              <p className="text-gray-700 dark:text-gray-300 font-medium transition-colors">
                 {aiType === 'cover-letter' ? 'Crafting your professional cover letter...' : 'Generating personalized interview questions...'}
               </p>
-              <p className="text-gray-400 text-sm mt-1">
+              <p className="text-gray-400 dark:text-gray-500 text-sm mt-1 transition-colors">
                 Analyzing job description & company context
               </p>
             </div>
@@ -408,21 +397,21 @@ const ApplicationDetail = () => {
 
           {/* AI Error */}
           {error && aiResult === null && (
-            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-sm">
+            <div className="p-4 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-2xl text-rose-700 dark:text-rose-300 text-sm transition-colors">
               {error}
             </div>
           )}
 
           {/* ========== COVER LETTER RESULT ========== */}
           {aiResult && aiType === 'cover-letter' && (
-            <div className="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200/50 dark:border-slate-800 overflow-hidden transition-colors">
               {/* Header Bar */}
-              <div className="bg-gradient-to-r from-brand-600 to-brand-500 px-6 py-4 flex items-center justify-between">
+              <div className="bg-gradient-to-r from-green-600 to-green-500 px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="text-white text-xl">✍️</span>
                   <div>
                     <h3 className="font-semibold text-white">Professional Cover Letter</h3>
-                    <p className="text-brand-100 text-xs">
+                    <p className="text-green-100 text-xs">
                       For {application.companyName} — {application.jobRole}
                     </p>
                   </div>
@@ -443,22 +432,22 @@ const ApplicationDetail = () => {
                 </div>
               </div>
 
-              {/* Letter Body - Professional formatting */}
+              {/* Letter Body */}
               <div className="p-8 md:p-10">
-                <div className="max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap" style={{ fontFamily: '"Georgia", "Times New Roman", serif', fontSize: '15px', lineHeight: '1.8' }}>
+                <div className="max-w-none text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap transition-colors" style={{ fontFamily: '"Georgia", "Times New Roman", serif', fontSize: '15px', lineHeight: '1.8' }}>
                   {aiResult}
                 </div>
               </div>
 
               {/* Footer Actions */}
-              <div className="border-t border-gray-100 px-6 py-4 bg-gray-50 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-gray-400 flex items-center gap-1">
+              <div className="border-t border-gray-200/50 dark:border-slate-800 px-6 py-4 bg-gray-50 dark:bg-slate-800 flex flex-wrap items-center justify-between gap-3 transition-colors">
+                <p className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1 transition-colors">
                   <span>⚡</span> Generated by Shortlisted AI — Review and personalize before sending
                 </p>
                 <button
                   onClick={generateCoverLetter}
                   disabled={aiLoading}
-                  className="px-4 py-2 text-sm text-brand-600 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition font-medium disabled:opacity-50"
+                  className="px-4 py-2 text-sm text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition font-medium disabled:opacity-50 transition-colors"
                 >
                   🔄 Regenerate
                 </button>
@@ -470,7 +459,7 @@ const ApplicationDetail = () => {
           {aiResult && aiType === 'interview-qa' && (
             <div className="space-y-4">
               {/* Header Card */}
-              <div className="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200/50 dark:border-slate-800 overflow-hidden transition-colors">
                 <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4">
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -506,15 +495,15 @@ const ApplicationDetail = () => {
 
                 {/* Category Filter Tabs */}
                 {categories.length > 1 && (
-                  <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap gap-2 bg-gray-50/50">
+                  <div className="px-4 py-3 border-b border-gray-200/50 dark:border-slate-800 flex flex-wrap gap-2 bg-gray-50/50 dark:bg-slate-800/50 transition-colors">
                     {categories.map(cat => (
                       <button
                         key={cat}
                         onClick={() => setActiveFilter(cat)}
                         className={`px-3 py-1.5 text-xs font-medium rounded-full transition-all ${activeFilter === cat
                             ? 'bg-blue-600 text-white shadow-sm'
-                            : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
-                          }`}
+                            : 'bg-white dark:bg-slate-900 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 border border-gray-200 dark:border-slate-700'
+                          } transition-colors`}
                       >
                         {cat !== 'All' && <span className="mr-1">{categoryIcon(cat)}</span>}
                         {cat}
@@ -538,7 +527,7 @@ const ApplicationDetail = () => {
                     return (
                       <div
                         key={realIndex}
-                        className="bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden hover:shadow-hover transition-shadow"
+                        className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200/50 dark:border-slate-800 overflow-hidden hover:shadow-lg transition-all transition-colors"
                       >
                         {/* Question Header */}
                         <button
@@ -556,25 +545,25 @@ const ApplicationDetail = () => {
                             {/* Badges Row */}
                             <div className="flex flex-wrap gap-2 mb-2">
                               {qa.category && (
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full border ${categoryColor(qa.category)}`}>
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full border transition-colors ${categoryColor(qa.category)}`}>
                                   {categoryIcon(qa.category)} {qa.category}
                                 </span>
                               )}
                               {qa.difficulty && (
-                                <span className={`px-2 py-0.5 text-xs font-medium rounded-full border ${difficultyColor(qa.difficulty)}`}>
+                                <span className={`px-2 py-0.5 text-xs font-medium rounded-full border transition-colors ${difficultyColor(qa.difficulty)}`}>
                                   {qa.difficulty}
                                 </span>
                               )}
                             </div>
 
                             {/* Question Text */}
-                            <p className="font-medium text-gray-900 leading-relaxed group-hover:text-blue-700 transition-colors">
+                            <p className="font-medium text-gray-900 dark:text-white leading-relaxed group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors">
                               {qa.question}
                             </p>
                           </div>
 
                           {/* Expand/Collapse Arrow */}
-                          <div className={`flex-shrink-0 mt-1 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                          <div className={`flex-shrink-0 mt-1 text-gray-400 dark:text-gray-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''} transition-colors`}>
                             <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                             </svg>
@@ -584,14 +573,14 @@ const ApplicationDetail = () => {
                         {/* Answer (Expandable) */}
                         <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
                           <div className="px-5 pb-5 pl-17">
-                            <div className="ml-12 p-4 bg-gradient-to-r from-brand-50 to-emerald-50 rounded-xl border-l-4 border-brand-400">
+                            <div className="ml-12 p-4 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border-l-4 border-green-400 transition-colors">
                               <div className="flex items-start gap-2">
-                                <span className="text-brand-500 mt-0.5 flex-shrink-0">💡</span>
+                                <span className="text-green-500 dark:text-green-400 mt-0.5 flex-shrink-0 transition-colors">💡</span>
                                 <div>
-                                  <p className="text-xs font-semibold text-brand-700 uppercase tracking-wide mb-1">
+                                  <p className="text-xs font-semibold text-green-700 dark:text-green-300 uppercase tracking-wide mb-1 transition-colors">
                                     Suggested Answer
                                   </p>
-                                  <p className="text-gray-700 text-sm leading-relaxed">
+                                  <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed transition-colors">
                                     {qa.answer}
                                   </p>
                                 </div>
@@ -603,19 +592,19 @@ const ApplicationDetail = () => {
                     );
                   })
                 ) : (
-                  <div className="text-center py-8 text-gray-500">
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400 transition-colors">
                     <p>No questions found for this filter.</p>
                   </div>
                 )}
               </div>
 
               {/* Footer Tips */}
-              <div className="bg-white rounded-2xl p-5 shadow-soft border border-gray-100">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 shadow-sm border border-gray-200/50 dark:border-slate-800 transition-colors">
                 <div className="flex items-start gap-3">
                   <span className="text-2xl">🎓</span>
                   <div>
-                    <h4 className="font-semibold text-gray-900 mb-1">Placement Prep Tips</h4>
-                    <ul className="text-sm text-gray-600 space-y-1">
+                    <h4 className="font-semibold text-gray-900 dark:text-white mb-1 transition-colors">Placement Prep Tips</h4>
+                    <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1 transition-colors">
                       <li>• Click <strong>"New Questions"</strong> to get a fresh set of 10 randomized questions each time</li>
                       <li>• Practice answering without looking at the suggested answer first</li>
                       <li>• Use the <strong>STAR method</strong> (Situation, Task, Action, Result) for behavioral questions</li>
@@ -627,7 +616,7 @@ const ApplicationDetail = () => {
               </div>
 
               {/* AI Attribution */}
-              <p className="text-xs text-gray-400 text-center flex items-center justify-center gap-1">
+              <p className="text-xs text-gray-400 dark:text-gray-500 text-center flex items-center justify-center gap-1 transition-colors">
                 <span>⚡</span> Questions generated by Gemini AI based on {application.companyName}'s job description — Each generation is unique
               </p>
             </div>
@@ -637,13 +626,13 @@ const ApplicationDetail = () => {
 
       {/* Reminder if no job description */}
       {!application?.jobDescription && (
-        <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl">
-          <p className="text-amber-800 text-sm">
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl transition-colors">
+          <p className="text-amber-800 dark:text-amber-300 text-sm transition-colors">
             💡 <strong>Pro Tip:</strong> Add a job description to unlock AI features like cover letter generation and interview prep!
           </p>
           <Link
             to={`/applications/${id}/edit`}
-            className="text-amber-700 hover:underline text-sm mt-2 inline-block"
+            className="text-amber-700 dark:text-amber-300 hover:underline text-sm mt-2 inline-block transition-colors"
           >
             Edit application to add job description →
           </Link>
