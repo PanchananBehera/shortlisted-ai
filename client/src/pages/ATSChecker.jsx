@@ -15,7 +15,10 @@ const ATSChecker = () => {
     const file = e.target.files[0];
     if (file) {
       const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-      if (!validTypes.includes(file.type)) {
+      const fileExt = file.name.split('.').pop().toLowerCase();
+      const validExts = ['pdf', 'docx', 'txt'];
+      
+      if (!validTypes.includes(file.type) && !validExts.includes(fileExt)) {
         setError('Please upload a PDF, DOCX, or TXT file');
         return;
       }

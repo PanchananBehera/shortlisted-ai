@@ -91,7 +91,7 @@ const LandingPage = () => {
 
         {/* Trust Badge */}
         <p className="mt-8 text-sm text-gray-500 dark:text-gray-500 flex items-center gap-2">
-          <span>✨</span>​🇧​​🇺​​🇮​​🇱​​🇹​ ​🇫​​🇴​​🇷​ ​🇹​​🇪​​🇨​​🇭​ ​🇦​​🇸​​🇵​​🇮​​🇷​​🇦​​🇳​​🇹​​🇸​ • ​🇫​​🇷​​🇪​​🇪​ ​🇫​​🇴​​🇷​​🇪​​🇻​​🇪​​🇷​ • ​🇳​​🇴​ ​🇨​​🇷​​🇪​​🇩​​🇮​​🇹​ ​🇨​​🇦​​🇷​​🇩​ ​🇷​​🇪​​🇶​​🇺​​🇮​​🇷​​🇪​​🇩​
+          <span>✨</span>​𝙱𝚞𝚒𝚕𝚝 𝚏𝚘𝚛 𝚝𝚎𝚌𝚑 𝚊𝚜𝚙𝚒𝚛𝚊𝚗𝚝𝚜 • 𝚏𝚛𝚎𝚎 𝚏𝚘𝚛𝚎𝚟𝚎𝚛 • 𝚗𝚘 𝚌𝚛𝚎𝚍𝚒𝚝 𝚌𝚊𝚛𝚍 𝚛𝚎𝚚𝚞𝚒𝚛𝚎𝚍
         </p>
       </section>
 
@@ -204,7 +204,7 @@ const LandingPage = () => {
             </span>
           </div>
           <div className="text-sm text-gray-500 dark:text-gray-500">
-          ᴄʀᴀꜰᴛᴇᴅ & ᴇɴɢɪɴᴇᴇʀᴇᴅ ʙʏ ᴘᴀɴᴄʜᴀɴᴀɴ ʙᴇʜᴇʀᴀ 🎨🔧
+          ᴄʀᴀꜰᴛᴇᴅ & ᴇɴɢɪɴᴇᴇʀᴇᴅ ʙʏ ℙᴀɴᴄʜᴀɴᴀɴ 𝔹ᴇʜᴇʀᴀ 🎨🔧
           </div>
         </div>
       </footer>

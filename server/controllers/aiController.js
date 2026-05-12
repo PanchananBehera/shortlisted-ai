@@ -19,15 +19,16 @@ const getModel = () => {
 const extractTextFromFile = async (file) => {
   if (!file) throw new Error('No file provided');
   
-  const mimetype = file.mimetype || file.type;
+  const mimetype = file.mimetype || file.type || '';
+  const ext = file.originalname ? file.originalname.split('.').pop().toLowerCase() : '';
   
-  if (mimetype === 'application/pdf') {
+  if (mimetype === 'application/pdf' || ext === 'pdf') {
     const data = await pdfParse(file.buffer);
     return data.text;
-  } else if (mimetype.includes('word') || mimetype.includes('document')) {
+  } else if (mimetype.includes('word') || mimetype.includes('document') || ext === 'docx') {
     const result = await mammoth.extractRawText({ buffer: file.buffer });
     return result.value;
-  } else if (mimetype === 'text/plain') {
+  } else if (mimetype === 'text/plain' || ext === 'txt') {
     return file.buffer.toString('utf-8');
   }
   

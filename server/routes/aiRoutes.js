@@ -25,7 +25,11 @@ const upload = multer({
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
       'text/plain'
     ];
-    if (allowed.includes(file.mimetype)) {
+    
+    const ext = file.originalname ? file.originalname.split('.').pop().toLowerCase() : '';
+    const validExts = ['pdf', 'docx', 'txt'];
+
+    if (allowed.includes(file.mimetype) || validExts.includes(ext)) {
       cb(null, true);
     } else {
       cb(new Error('Only PDF, DOCX, and TXT files are allowed'), false);

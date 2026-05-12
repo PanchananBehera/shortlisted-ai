@@ -23,16 +23,18 @@ const extractTextFromFile = async (filePath, fileType) => {
   try {
     let text = '';
     
-    if (fileType === 'application/pdf') {
+    const ext = path.extname(filePath).toLowerCase();
+    
+    if (fileType === 'application/pdf' || ext === '.pdf') {
       const dataBuffer = fs.readFileSync(filePath);
       const data = await pdfParse(dataBuffer);
       text = data.text;
     } 
-    else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || fileType.includes('word') || ext === '.docx') {
       const result = await mammoth.extractRawText({ path: filePath });
       text = result.value;
     } 
-    else if (fileType === 'text/plain') {
+    else if (fileType === 'text/plain' || ext === '.txt') {
       text = fs.readFileSync(filePath, 'utf8');
     } 
     else {

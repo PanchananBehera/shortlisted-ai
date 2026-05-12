@@ -40,7 +40,10 @@ const ResumeAnalyzer = () => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
       const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-      if (!validTypes.includes(selectedFile.type)) {
+      const fileExt = selectedFile.name.split('.').pop().toLowerCase();
+      const validExts = ['pdf', 'docx', 'txt'];
+      
+      if (!validTypes.includes(selectedFile.type) && !validExts.includes(fileExt)) {
         setError('Please upload a PDF, DOCX, or TXT file');
         return;
       }
