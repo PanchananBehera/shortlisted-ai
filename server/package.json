@@ -9,11 +9,7 @@
     "dev": "nodemon index.js",
     "build": "echo 'No build step for Node.js backend'",
     "test": "jest --detectOpenHandles",
-    "test:watch": "jest --watch",
-    "lint": "eslint . --ext .js",
-    "lint:fix": "eslint . --ext .js --fix",
-    "format": "prettier --write \"**/*.js\"",
-    "prepare": "husky install"
+    "test:watch": "jest --watch"
   },
   "keywords": [
     "job-tracker",
@@ -73,33 +69,7 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "coveragePathIgnorePatterns": [
-      "/node_modules/"
-    ],
+    "coveragePathIgnorePatterns": ["/node_modules/"],
     "testTimeout": 30000
-  },
-  "eslintConfig": {
-    "extends": [
-      "eslint:recommended",
-      "prettier"
-    ],
-    "env": {
-      "node": true,
-      "es2022": true
-    },
-    "parserOptions": {
-      "ecmaVersion": "latest",
-      "sourceType": "module"
-    },
-    "rules": {
-      "no-unused-vars": "warn",
-      "no-console": "off"
-    }
-  },
-  "prettier": {
-    "semi": true,
-    "singleQuote": true,
-    "trailingComma": "es5",
-    "printWidth": 100
   }
 }
