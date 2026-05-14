@@ -1,18 +1,17 @@
 // server/controllers/aiController.js
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createRequire } from 'module';
-import nodemailer from 'nodemailer'; // ✅ Email import
-import PDFDocument from 'pdfkit'; // ✅ PDF import - ADD THIS
-
-const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+import nodemailer from 'nodemailer';
+import PDFDocument from 'pdfkit';
 import mammoth from 'mammoth';
 import AnalysisHistory from '../models/AnalysisHistory.js';
+
+import { PDFParse } from 'pdf-parse';
 
 // Helper to get Gemini model after env vars are loaded
 const getModel = () => {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  return genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
+  return genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 };
 
 // 🔁 Helper: Extract text from uploaded file buffer
@@ -23,7 +22,7 @@ const extractTextFromFile = async (file) => {
   const ext = file.originalname ? file.originalname.split('.').pop().toLowerCase() : '';
   
   if (mimetype === 'application/pdf' || ext === 'pdf') {
-    const data = await pdfParse(file.buffer);
+    const data = await PDFParse(file.buffer);
     return data.text;
   } else if (mimetype.includes('word') || mimetype.includes('document') || ext === 'docx') {
     const result = await mammoth.extractRawText({ buffer: file.buffer });

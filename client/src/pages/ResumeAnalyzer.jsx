@@ -21,43 +21,75 @@ const ResumeAnalyzer = () => {
   const [photoPreview, setPhotoPreview] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
   
-  // ✅ NEW: History state
+  // History state
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   
-  // ✅ NEW: Email state
+  // Email state
   const [emailLoading, setEmailLoading] = useState(false);
 
+  // ✅ PDF/File Validation Helper
+  const validateFile = (file) => {
+    const errors = [];
+    
+    // Check if file exists
+    if (!file) {
+      errors.push('Please select a file first');
+      return errors;
+    }
+    
+    // Check file type
+    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+    const validExts = ['pdf', 'docx', 'txt'];
+    const fileType = file.type.toLowerCase();
+    const fileExt = file.name.split('.').pop().toLowerCase();
+    
+    if (!validTypes.includes(fileType) && !validExts.includes(fileExt)) {
+      errors.push('Only PDF, DOCX, and TXT files are supported.');
+    }
+    
+    // Check file size (5MB limit)
+    if (file.size > 5 * 1024 * 1024) {
+      errors.push('File size must be under 5MB. Please compress your PDF.');
+    }
+    
+    // Check if PDF is text-based (not scanned image)
+    // Note: This is a best-effort check; actual validation happens on backend
+    if (fileExt === 'pdf' && file.size < 10 * 1024) {
+      errors.push('PDF appears to be empty or image-based. Please use a text-based PDF.');
+    }
+    
+    return errors;
+  };
+
   const handlePhotoChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setProfilePhoto(file);
-      setPhotoPreview(URL.createObjectURL(file));
+    const selectedFile = e.target.files[0];
+    if (selectedFile) {
+      setProfilePhoto(selectedFile);
+      setPhotoPreview(URL.createObjectURL(selectedFile));
     }
   };
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
+    
     if (selectedFile) {
-      const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-      const fileExt = selectedFile.name.split('.').pop().toLowerCase();
-      const validExts = ['pdf', 'docx', 'txt'];
+      const validationErrors = validateFile(selectedFile);
       
-      if (!validTypes.includes(selectedFile.type) && !validExts.includes(fileExt)) {
-        setError('Please upload a PDF, DOCX, or TXT file');
+      if (validationErrors.length > 0) {
+        setError(validationErrors.join(' '));
+        setFile(null);
+        setFileName('');
         return;
       }
-      if (selectedFile.size > 5 * 1024 * 1024) {
-        setError('File size should be less than 5MB');
-        return;
-      }
+      
       setFile(selectedFile);
       setFileName(selectedFile.name);
       setError('');
     }
   };
 
-  // ✅ NEW: Fetch analysis history
+  // Fetch analysis history
   const fetchHistory = async () => {
     try {
       setHistoryLoading(true);
@@ -67,6 +99,7 @@ const ResumeAnalyzer = () => {
       }
     } catch (err) {
       console.error('Failed to fetch history:', err);
+      setError('Could not load analysis history');
     } finally {
       setHistoryLoading(false);
     }
@@ -74,8 +107,16 @@ const ResumeAnalyzer = () => {
 
   const handleAnalyze = async (e) => {
     e.preventDefault();
+    
+    // Final validation before upload
+    const validationErrors = validateFile(file);
+    if (validationErrors.length > 0) {
+      setError(validationErrors.join(' '));
+      return;
+    }
+    
     if (!file) {
-      setError('Please select a resume file');
+      setError('Please select a PDF resume file');
       return;
     }
 
@@ -86,61 +127,82 @@ const ResumeAnalyzer = () => {
 
     try {
       const formData = new FormData();
-      formData.append('resume', file);
+      formData.append('resume', file); // Must match backend upload.single('resume')
       formData.append('targetRole', targetRole);
       formData.append('jobDescription', jobDescription);
 
       const res = await api.post('/ai/analyze-resume', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        onUploadProgress: (progressEvent) => {
+          // Optional: Show upload progress
+          const percentCompleted = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total
+          );
+          console.log(`Upload: ${percentCompleted}%`);
+        }
       });
       
-      setResult(res.data);
-      
-      // ✅ Auto-save to history (handled by backend)
-      fetchHistory();
+      if (res.data.success) {
+        setResult(res.data);
+        fetchHistory(); // Refresh history after successful analysis
+      } else {
+        throw new Error(res.data.error || 'Analysis failed');
+      }
       
     } catch (err) {
-      setError(err.response?.data?.message || 'Analysis failed. Please try again.');
+      console.error('Analysis error:', err);
+      
+      // User-friendly error messages
+      if (err.response?.status === 413) {
+        setError('File is too large. Please compress your PDF to under 5MB.');
+      } else if (err.response?.status === 400) {
+        setError(err.response?.data?.error || err.response?.data?.message || 'Invalid file. Please upload a valid PDF.');
+      } else if (err.response?.status === 401) {
+        setError('Please log in to analyze your resume');
+        navigate('/login');
+      } else {
+        setError(err.response?.data?.error || err.response?.data?.message || err.message || 'Analysis failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
- // ✅ UPDATED: Handle Email Resume WITH PDF Attachment
-const handleEmailResume = async () => {
-  if (!user?.email) {
-    alert('Please log in to send email.');
-    return;
-  }
+  // Handle Email Resume WITH PDF Attachment
+  const handleEmailResume = async () => {
+    if (!user?.email) {
+      alert('Please log in to send email.');
+      return;
+    }
 
-  if (!result?.correctedResume) {
-    alert('No resume content to send.');
-    return;
-  }
+    if (!result?.correctedResume) {
+      alert('No resume content to send.');
+      return;
+    }
 
-  if (!window.confirm(`Send optimized resume + ATS Report PDF to ${user.email}?`)) return;
+    if (!window.confirm(`Send optimized resume + ATS Report PDF to ${user.email}?`)) return;
 
-  setEmailLoading(true);
-  try {
-    await api.post('/ai/email-resume', {
-      email: user.email,
-      targetRole: targetRole,
-      correctedResume: result.correctedResume,
-      score: result.score,
-      atsScore: result.atsCheck?.overallScore || 0,
-      strengths: result.strengths,
-      atsCheck: result.atsCheck, // ✅ Send ATS data for PDF generation
-      roadmap: result.roadmap     // ✅ Send roadmap for PDF generation
-    });
-    alert('✅ Resume + ATS Report sent successfully! Check your inbox.');
-  } catch (err) {
-    console.error('Email error:', err);
-    alert('❌ Failed to send email. Please try again.');
-  } finally {
-    setEmailLoading(false);
-  }
-};
-  // ✅ NEW: Handle Export ATS Report PDF
+    setEmailLoading(true);
+    try {
+      await api.post('/ai/email-resume', {
+        email: user.email,
+        targetRole: targetRole,
+        correctedResume: result.correctedResume,
+        score: result.score,
+        atsScore: result.atsCheck?.overallScore || 0,
+        strengths: result.strengths,
+        atsCheck: result.atsCheck,
+        roadmap: result.roadmap
+      });
+      alert('✅ Resume + ATS Report sent successfully! Check your inbox.');
+    } catch (err) {
+      console.error('Email error:', err);
+      alert('❌ Failed to send email. Please try again.');
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  // Handle Export ATS Report PDF
   const handleExportATSReport = async () => {
     if (!result?.atsCheck) {
       alert('No ATS data available to export.');
@@ -154,10 +216,9 @@ const handleEmailResume = async () => {
         atsCheck: result.atsCheck,
         roadmap: result.roadmap
       }, {
-        responseType: 'blob' // Important for PDF download
+        responseType: 'blob'
       });
 
-      // Create download link
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -214,7 +275,7 @@ const handleEmailResume = async () => {
         }
       }
 
-      doc.setFillColor(34, 197, 94); // green-500
+      doc.setFillColor(34, 197, 94);
       doc.rect(0, headerY, pageWidth, 40, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(20);
@@ -254,7 +315,7 @@ const handleEmailResume = async () => {
     }
   };
 
-  // ✅ NEW: Download corrected resume from history
+  // Download corrected resume from history
   const downloadCorrectedResume = (correctedResume, targetRole, createdAt) => {
     const blob = new Blob([correctedResume], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -265,21 +326,19 @@ const handleEmailResume = async () => {
     URL.revokeObjectURL(url);
   };
 
-  // ✅ Fetch history on mount
+  // Fetch history on mount
   useEffect(() => {
     fetchHistory();
   }, []);
 
-  // ✅ NEW: Load preloaded analysis from History page
+  // Load preloaded analysis from History page
   useEffect(() => {
     const preloaded = location.state?.preloadedAnalysis;
     
     if (preloaded && preloaded._id) {
-      // Safely load the analysis data
       setResult(prev => ({
         ...prev,
         ...preloaded,
-        // Ensure nested objects exist
         atsCheck: preloaded.atsCheck || {
           overallScore: 0,
           keywordMatch: { score: 0, matchedKeywords: [], missingKeywords: [] },
@@ -299,8 +358,6 @@ const handleEmailResume = async () => {
       
       setTargetRole(preloaded.targetRole || 'Software Engineer');
       setActiveTab('overview');
-      
-      // Clear navigation state to prevent reload on refresh
       navigate('/resume-analyzer', { replace: true, state: {} });
     }
   }, [location, navigate]);
@@ -331,15 +388,15 @@ const handleEmailResume = async () => {
             <p className="text-xs text-gray-500 dark:text-gray-500 mt-1 transition-colors">Helps AI match your resume to exact job requirements</p>
           </div>
 
-          {/* File Upload */}
+          {/* File Upload - PDF, DOCX, TXT */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
-              Upload Resume (PDF, DOCX, or TXT)
+              Upload Resume (PDF, DOCX, TXT)
             </label>
             <div className="relative">
               <input
                 type="file"
-                accept=".pdf,.docx,.txt"
+                accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
                 onChange={handleFileChange}
                 className="hidden"
                 id="resume-upload"
@@ -359,16 +416,37 @@ const handleEmailResume = async () => {
                 </div>
               </label>
             </div>
+            
+            {/* Selected File Display */}
             {fileName && (
               <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-xl flex items-center gap-3 transition-colors">
                 <span className="text-2xl">📄</span>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-green-700 dark:text-green-300 transition-colors">{fileName}</p>
-                  <p className="text-xs text-green-600 dark:text-green-400 transition-colors">Ready to analyze</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-green-700 dark:text-green-300 truncate transition-colors">{fileName}</p>
+                  <p className="text-xs text-green-600 dark:text-green-400 transition-colors">
+                    {(file?.size / 1024).toFixed(1)} KB • Ready to analyze
+                  </p>
                 </div>
-                <button type="button" onClick={() => { setFile(null); setFileName(''); }} className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 transition-colors">✕</button>
+                <button 
+                  type="button" 
+                  onClick={() => { setFile(null); setFileName(''); setError(''); }} 
+                  className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 transition-colors flex-shrink-0"
+                >
+                  ✕
+                </button>
               </div>
             )}
+            
+            {/* Helper Text */}
+            <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-xs text-blue-700 dark:text-blue-300 flex items-start gap-2">
+                <span>💡</span>
+                <span>
+                  <strong>Tip:</strong> Export your resume as PDF from Word/Google Docs for best results. 
+                  Scanned/image PDFs may not be readable by our AI.
+                </span>
+              </p>
+            </div>
           </div>
 
           {/* Target Role */}
@@ -429,39 +507,60 @@ const handleEmailResume = async () => {
             </div>
           </div>
 
+          {/* Error Message */}
+          {error && (
+            <div className="p-4 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl text-rose-700 dark:text-rose-300 transition-colors">
+              <p className="font-medium">⚠️ {error}</p>
+              {error.includes('PDF') && (
+                <p className="text-sm mt-2">
+                  <strong>Need help?</strong> Convert your file to PDF using:
+                  <ul className="list-disc list-inside mt-1 text-xs">
+                    <li>Google Docs: File → Download → PDF</li>
+                    <li>Microsoft Word: File → Save As → PDF</li>
+                    <li>Online: ilovepdf.com or smallpdf.com</li>
+                  </ul>
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Analyze Button */}
           <button
             type="submit"
             disabled={loading || !file}
-            className="w-full py-4 bg-green-500 dark:bg-green-600 text-white rounded-full font-semibold hover:bg-green-600 dark:hover:bg-green-500 transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-4 bg-green-500 dark:bg-green-600 text-white rounded-full font-semibold hover:bg-green-600 dark:hover:bg-green-500 transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {loading ? (
-              <span className="flex items-center justify-center gap-2">
+              <>
                 <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
                 Analyzing & optimizing...
-              </span>
+              </>
             ) : (
-              '🚀 Analyze & Optimize Resume'
+              <>
+                <span>🚀</span>
+                <span>Analyze & Optimize Resume</span>
+              </>
             )}
           </button>
+          
+          {/* Loading Progress */}
+          {loading && (
+            <div className="text-center text-sm text-gray-500 dark:text-gray-400">
+              <p>🔍 Extracting text from PDF...</p>
+              <p className="text-xs mt-1">This may take 10-30 seconds depending on file size</p>
+            </div>
+          )}
         </form>
       </div>
-
-      {/* Error */}
-      {error && (
-        <div className="p-4 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl text-rose-700 dark:text-rose-300 text-center transition-colors">
-          {error}
-        </div>
-      )}
 
       {/* Results Section */}
       {result && (
         <div className="space-y-6 animate-fade-in">
           
-          {/* Tab Navigation - Updated with History tab */}
+          {/* Tab Navigation */}
           <div className="flex gap-2 border-b border-gray-200/50 dark:border-slate-800 pb-1 overflow-x-auto transition-colors">
             {[
               { id: 'overview', label: '📊 Analysis Overview' },
@@ -489,7 +588,7 @@ const handleEmailResume = async () => {
             {/* ===== OVERVIEW TAB ===== */}
             {activeTab === 'overview' && (
               <div className="space-y-6">
-                {/* Score Header - Updated with Export ATS Report Button */}
+                {/* Score Header */}
                 <div className="flex flex-col md:flex-row items-center gap-6 p-4 bg-gray-50 dark:bg-slate-800 rounded-xl transition-colors">
                   <div className="relative w-32 h-32 flex items-center justify-center">
                     <svg className="w-full h-full transform -rotate-90">
@@ -518,7 +617,7 @@ const handleEmailResume = async () => {
                     </p>
                   </div>
                   
-                  {/* ✅ NEW: Export ATS Report Button */}
+                  {/* Export ATS Report Button */}
                   <button
                     onClick={handleExportATSReport}
                     className="px-4 py-2 text-sm bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-xl hover:bg-purple-200 dark:hover:bg-purple-900/50 transition flex items-center gap-2"
@@ -618,7 +717,7 @@ const handleEmailResume = async () => {
                   <div className="flex gap-2">
                     <button onClick={() => copyToClipboard(result.correctedResume)} className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200/50 dark:border-slate-700 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-800 transition text-green-600 dark:text-green-400">📋 Copy</button>
                     
-                    {/* ✅ NEW EMAIL BUTTON */}
+                    {/* EMAIL BUTTON */}
                     <button 
                       onClick={handleEmailResume} 
                       disabled={emailLoading || !user}
@@ -681,7 +780,7 @@ const handleEmailResume = async () => {
               </div>
             )}
 
-            {/* ✅ ===== HISTORY TAB ===== */}
+            {/* ===== HISTORY TAB ===== */}
             {activeTab === 'history' && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center mb-4">
@@ -705,7 +804,6 @@ const handleEmailResume = async () => {
                         key={item._id}
                         className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-gray-200/50 dark:border-slate-800 hover:shadow-md transition-all cursor-pointer"
                         onClick={() => {
-                          // Load this analysis into current view
                           setResult(item);
                           setActiveTab('overview');
                           setTargetRole(item.targetRole);
@@ -735,7 +833,6 @@ const handleEmailResume = async () => {
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                // Download corrected resume from history
                                 downloadCorrectedResume(item.correctedResume, item.targetRole, item.createdAt);
                               }}
                               className="mt-2 text-xs text-green-600 dark:text-green-400 hover:underline"

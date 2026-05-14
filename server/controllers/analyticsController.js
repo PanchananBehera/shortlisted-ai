@@ -1,80 +1,80 @@
 import Application from '../models/Application.js';
+import mongoose from 'mongoose';
 
-// @desc    Get Dashboard Statistics
-// @route   GET /api/analytics/dashboard-stats
+// @desc    Get dashboard stats, charts, and recent applications
+// @route   GET /api/analytics/dashboard
 // @access  Private
 export const getDashboardStats = async (req, res) => {
   try {
     const userId = req.user.id;
+    const userObjectId = new mongoose.Types.ObjectId(userId);
 
-    // Get all applications for the user
-    const applications = await Application.find({ userId });
-    const total = applications.length;
+    // 1. Get Basic Counts
+    const total = await Application.countDocuments({ userId });
+    const interviews = await Application.countDocuments({
+      userId,
+      status: { $in: ['Interview Scheduled', 'HR Round'] }
+    });
+    const offers = await Application.countDocuments({
+      userId,
+      status: 'Offer Received'
+    });
+    const rejected = await Application.countDocuments({
+      userId,
+      status: 'Rejected'
+    });
 
-    // 1. Status Breakdown (for Pie Chart)
-    const statusCounts = applications.reduce((acc, curr) => {
-      acc[curr.status] = (acc[curr.status] || 0) + 1;
-      return acc;
-    }, {});
+    // 2. Get Status Distribution (for Pie Chart)
+    const statusData = await Application.aggregate([
+      { $match: { userId: userObjectId } },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
 
-    const statusData = Object.entries(statusCounts).map(([name, value]) => ({
-      name,
-      value,
-    }));
-
-    // 2. Key Metrics
-    const interviewCount = applications.filter(app => 
-      app.status === 'Interview Scheduled' || app.status === 'HR Round'
-    ).length;
-    
-    const offerCount = applications.filter(app => app.status === 'Offer Received').length;
-    const rejectedCount = applications.filter(app => app.status === 'Rejected').length;
-
-    const interviewRate = total > 0 ? Math.round((interviewCount / total) * 100) : 0;
-    const offerRate = total > 0 ? Math.round((offerCount / total) * 100) : 0;
-
-    // 3. Activity Trend (Last 30 Days)
+    // 3. Get Activity for Last 30 Days (for Bar Chart)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const recentApps = applications.filter(app => new Date(app.dateApplied) >= thirtyDaysAgo);
-    
-    const trendData = recentApps.reduce((acc, curr) => {
-      const date = new Date(curr.dateApplied).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      acc[date] = (acc[date] || 0) + 1;
-      return acc;
-    }, {});
+    const activityData = await Application.aggregate([
+      { $match: { 
+          userId: userObjectId,
+          createdAt: { $gte: thirtyDaysAgo } 
+      }},
+      { $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+          count: { $sum: 1 }
+      }},
+      { $sort: { _id: 1 } }
+    ]);
 
-    const trendChartData = Object.entries(trendData)
-      .map(([date, count]) => ({ date, count }))
-      .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    // 4. Recent Applications (Last 5)
-    const recentApplications = applications
-      .sort((a, b) => new Date(b.dateApplied) - new Date(a.dateApplied))
-      .slice(0, 5)
-      .map(app => ({
-        id: app._id,
-        companyName: app.companyName,
-        jobRole: app.jobRole,
-        status: app.status,
-        dateApplied: app.dateApplied,
-      }));
+    // 4. Get Recent Applications
+    const recentApplications = await Application.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('companyName jobRole status dateApplied');
 
     res.json({
-      total,
-      interviewCount,
-      offerCount,
-      rejectedCount,
-      interviewRate,
-      offerRate,
-      statusData,
-      trendChartData,
-      recentApplications
+      success: true,
+      data: {
+        stats: {
+          total,
+          interviews,
+          offers,
+          rejected
+        },
+        statusDistribution: statusData.map(item => ({
+          name: item._id,
+          value: item.count
+        })),
+        activity: activityData.map(item => ({
+          date: item._id,
+          count: item.count
+        })),
+        recentApplications
+      }
     });
 
   } catch (error) {
-    console.error('Analytics Error:', error);
-    res.status(500).json({ message: 'Failed to fetch dashboard stats' });
+    res.status(500).json({ success: false, error: error.message });
   }
 };

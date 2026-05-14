@@ -1,12 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import api from '../utils/axios';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
+import { 
+  FileText, Phone, PartyPopper, XCircle, 
+  Building2, MapPin, Calendar, ChevronRight, Loader2 
+} from 'lucide-react';
+import { analyticsService } from '../service/analyticsService';
+import { 
+  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid 
+} from 'recharts';
+
+const COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#06b6d4'];
 
 const Dashboard = () => {
-  const [stats, setStats] = useState({ totalApplications: 0, interviews: 0, offers: 0, rejected: 0 });
-  const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -14,116 +21,215 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const [statsRes, appsRes] = await Promise.all([
-        api.get('/analytics/dashboard'),
-        api.get('/applications?limit=5')
-      ]);
-      setStats(statsRes.data);
-      setApplications(appsRes.data.applications || []);
+      setLoading(true);
+      const result = await analyticsService.getDashboardStats();
+      setData(result);
     } catch (error) {
-      console.error('Failed to fetch dashboard data', error);
+      console.error("Failed to load dashboard", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const pieData = [
-    { name: 'Applied', value: stats.totalApplications, color: '#22c55e' },
-    { name: 'Interviews', value: stats.interviews, color: '#3b82f6' },
-    { name: 'Offers', value: stats.offers, color: '#8b5cf6' },
-    { name: 'Rejected', value: stats.rejected, color: '#ef4444' },
-  ].filter(item => item.value > 0);
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
+      </div>
+    );
+  }
 
-  if (loading) return <div className="flex items-center justify-center h-64 bg-[#fafaf8] dark:bg-slate-950 transition-colors"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div></div>;
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-gray-500 dark:text-gray-400">
+        <p className="text-lg">⚠️ Could not load dashboard data.</p>
+        <button
+          onClick={fetchDashboardData}
+          className="mt-4 px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-full font-medium transition"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-8 bg-[#fafaf8] dark:bg-slate-950 min-h-screen transition-colors duration-300">
-      <div className="flex justify-between items-center">
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-4xl font-serif text-gray-900 dark:text-white transition-colors">📊 Dashboard</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1 transition-colors">Track your placement journey</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            📊 Dashboard
+          </h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">
+            Track your placement journey
+          </p>
         </div>
-        <Link to="/applications/new" className="bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-500 text-white px-8 py-3 rounded-full font-medium transition shadow-md hover:shadow-lg">
-          + Add Application
-        </Link>
+        <button className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-full font-medium transition flex items-center gap-2 shadow-lg">
+          <span>+ Add Application</span>
+        </button>
       </div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { label: 'Applications', value: stats.totalApplications, icon: '📝', color: 'bg-green-100 dark:bg-green-900/30' },
-          { label: 'Interviews', value: stats.interviews, icon: '🎤', color: 'bg-blue-100 dark:bg-blue-900/30' },
-          { label: 'Offers', value: stats.offers, icon: '🎉', color: 'bg-purple-100 dark:bg-purple-900/30' },
-          { label: 'Rejected', value: stats.rejected, icon: '❌', color: 'bg-rose-100 dark:bg-rose-900/30' },
-        ].map((card, i) => (
-          <div key={i} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-200/50 dark:border-slate-800 transition-colors">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400 transition-colors">{card.label}</p>
-                <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1 transition-colors">{card.value}</p>
-              </div>
-              <div className={`p-3 ${card.color} rounded-xl`}><span className="text-2xl">{card.icon}</span></div>
-            </div>
-          </div>
-        ))}
+        <StatCard 
+          title="Total Applications" 
+          value={data.stats.total} 
+          icon={<FileText className="w-6 h-6" />} 
+          color="bg-blue-100 text-blue-600" 
+        />
+        <StatCard 
+          title="Interviews" 
+          value={data.stats.interviews} 
+          icon={<Phone className="w-6 h-6" />} 
+          color="bg-purple-100 text-purple-600" 
+        />
+        <StatCard 
+          title="Offers" 
+          value={data.stats.offers} 
+          icon={<PartyPopper className="w-6 h-6" />} 
+          color="bg-yellow-100 text-yellow-600" 
+        />
+        <StatCard 
+          title="Rejected" 
+          value={data.stats.rejected} 
+          icon={<XCircle className="w-6 h-6" />} 
+          color="bg-red-100 text-red-600" 
+        />
       </div>
 
+      {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-200/50 dark:border-slate-800 transition-colors">
-          <h3 className="text-lg font-serif font-semibold text-gray-900 dark:text-white mb-4 transition-colors">📊 Application Status</h3>
-          {pieData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
+        
+        {/* Application Status Chart */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+          <h3 className="text-lg font-semibold mb-4 dark:text-white">📊 Application Status</h3>
+          {data.statusDistribution.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value">
-                  {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                <Pie
+                  data={data.statusDistribution}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {data.statusDistribution.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
                 </Pie>
-                <RechartsTooltip />
+                <Tooltip />
+                <Legend />
               </PieChart>
             </ResponsiveContainer>
-          ) : <div className="flex items-center justify-center h-64 text-gray-400 dark:text-gray-500"><p>No applications yet</p></div>}
+          ) : (
+            <div className="flex items-center justify-center h-[300px] text-gray-400">
+              <p>No applications added yet. Start tracking! 🚀</p>
+            </div>
+          )}
         </div>
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-200/50 dark:border-slate-800 transition-colors">
-          <h3 className="text-lg font-serif font-semibold text-gray-900 dark:text-white mb-4 transition-colors">📈 Activity (Last 30 Days)</h3>
-          <div className="h-64 flex items-center justify-center text-gray-400 dark:text-gray-500"><p>Activity chart coming soon</p></div>
+
+        {/* Activity Chart */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+          <h3 className="text-lg font-semibold mb-4 dark:text-white">📈 Activity (Last 30 Days)</h3>
+          {data.activity.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={data.activity}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.1} />
+                <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
+                <YAxis stroke="#9ca3af" fontSize={12} />
+                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }} />
+                <Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-[300px] text-gray-400">
+              <p>Activity will appear here as you add applications 📅</p>
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200/50 dark:border-slate-800 transition-colors overflow-hidden">
-        <div className="p-6 border-b border-gray-200/50 dark:border-slate-800 transition-colors">
-          <h3 className="text-lg font-serif font-semibold text-gray-900 dark:text-white transition-colors">🕒 Recent Applications</h3>
+      {/* Recent Applications List */}
+      <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold dark:text-white"> Recent Applications</h3>
+          <button className="text-sm text-green-500 hover:text-green-600 font-medium">View All</button>
         </div>
+        
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50/50 dark:bg-slate-800/50 transition-colors">
+          <table className="w-full text-left">
+            <thead className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
               <tr>
-                {['Company', 'Role', 'Status', 'Date', 'Action'].map(h => (
-                  <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider transition-colors">{h}</th>
-                ))}
+                <th className="pb-3 font-medium">Company</th>
+                <th className="pb-3 font-medium">Position</th>
+                <th className="pb-3 font-medium">Status</th>
+                <th className="pb-3 font-medium">Date</th>
+                <th className="pb-3 font-medium">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200/50 dark:divide-slate-800 transition-colors">
-              {applications.map((app) => (
-                <tr key={app._id} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white transition-colors">{app.companyName}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400 transition-colors">{app.jobRole}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-3 py-1 text-xs font-medium rounded-full ${
-                      app.status === 'Applied' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
-                      app.status === 'Interview' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' :
-                      app.status === 'Offer' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300' :
-                      'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300'
-                    } transition-colors`}>{app.status}</span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400 transition-colors">{new Date(app.appliedDate).toLocaleDateString()}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    <Link to={`/applications/${app._id}`} className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 font-medium transition-colors">View</Link>
+            <tbody className="text-gray-700 dark:text-gray-300">
+              {data.recentApplications.length > 0 ? (
+                data.recentApplications.map((app) => (
+                  <tr key={app._id} className="border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="py-4 font-medium">{app.companyName}</td>
+                    <td className="py-4">{app.jobRole}</td>
+                    <td className="py-4">
+                      <StatusBadge status={app.status} />
+                    </td>
+                    <td className="py-4 text-sm text-gray-500">{new Date(app.dateApplied).toLocaleDateString()}</td>
+                    <td className="py-4">
+                      <button className="text-green-500 hover:text-green-600">
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="5" className="py-8 text-center text-gray-400">
+                    No applications found. Click "Add Application" to start! 
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
       </div>
     </div>
+  );
+};
+
+// Helper Components
+
+const StatCard = ({ title, value, icon, color }) => (
+  <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex items-center justify-between">
+    <div>
+      <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">{title}</p>
+      <h3 className="text-3xl font-bold dark:text-white">{value}</h3>
+    </div>
+    <div className={`p-3 rounded-xl ${color}`}>
+      {icon}
+    </div>
+  </div>
+);
+
+const StatusBadge = ({ status }) => {
+  const styles = {
+    'Applied': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    'Interview Scheduled': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    'HR Round': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+    'Offer Received': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    'Rejected': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    'Withdrawn': 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+  };
+
+  return (
+    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
+      {status}
+    </span>
   );
 };
 
