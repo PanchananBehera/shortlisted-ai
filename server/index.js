@@ -13,6 +13,7 @@ import resumeRoutes from './routes/resumeRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 
+
 // Initialize express app
 const app = express();
 const PORT = process.env.PORT || 5000;

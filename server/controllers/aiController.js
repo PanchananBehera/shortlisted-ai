@@ -6,12 +6,22 @@ import PDFDocument from 'pdfkit';
 import mammoth from 'mammoth';
 import AnalysisHistory from '../models/AnalysisHistory.js';
 
-import { PDFParse } from 'pdf-parse';
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
 
 // Helper to get Gemini model after env vars are loaded
-const getModel = () => {
+const getModel = (modelName = 'gemini-2.0-flash') => {
+  if (!process.env.GEMINI_API_KEY) {
+    console.error('❌ GEMINI_API_KEY is missing from environment variables!');
+    throw new Error('Gemini API key not configured');
+  }
+  
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  return genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  
+  // Use v1beta for newer models like 2.0/3.0
+  return genAI.getGenerativeModel({ 
+    model: modelName 
+  });
 };
 
 // 🔁 Helper: Extract text from uploaded file buffer
@@ -22,7 +32,8 @@ const extractTextFromFile = async (file) => {
   const ext = file.originalname ? file.originalname.split('.').pop().toLowerCase() : '';
   
   if (mimetype === 'application/pdf' || ext === 'pdf') {
-    const data = await PDFParse(file.buffer);
+    const parser = new pdfParse.PDFParse({ data: file.buffer });
+    const data = await parser.getText();
     return data.text;
   } else if (mimetype.includes('word') || mimetype.includes('document') || ext === 'docx') {
     const result = await mammoth.extractRawText({ buffer: file.buffer });
@@ -186,8 +197,16 @@ ${regenerationInstruction}
 Write the cover letter now:
 `.trim();
 
-    const result = await getModel().generateContent(prompt);
-    const coverLetter = result.response.text().trim();
+    let result;
+    try {
+      result = await getModel('gemini-2.0-flash').generateContent(prompt);
+    } catch (modelError) {
+      console.warn('⚠️ Gemini 2.0 Flash failed, falling back to Gemini Pro Latest:', modelError.message);
+      result = await getModel('gemini-pro-latest').generateContent(prompt);
+    }
+    
+    const response = await result.response;
+    const coverLetter = response.text().trim();
 
     res.json({
       success: true,
@@ -281,8 +300,16 @@ ${avoidQuestions}
 Return ONLY the JSON array, no other text.
 `.trim();
 
-    const result = await getModel().generateContent(prompt);
-    let responseText = result.response.text().trim();
+    let result;
+    try {
+      result = await getModel('gemini-2.0-flash').generateContent(prompt);
+    } catch (modelError) {
+      console.warn('⚠️ Gemini 2.0 Flash failed, falling back to Gemini Pro Latest:', modelError.message);
+      result = await getModel('gemini-pro-latest').generateContent(prompt);
+    }
+    
+    const response = await result.response;
+    let responseText = response.text().trim();
 
     responseText = responseText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     
@@ -444,8 +471,16 @@ Resume Text:
 ${resumeText.substring(0, 4500)}
 `.trim();
 
-    const result = await getModel().generateContent(prompt);
-    let responseText = result.response.text().trim();
+    let result;
+    try {
+      result = await getModel('gemini-2.0-flash').generateContent(prompt);
+    } catch (modelError) {
+      console.warn('⚠️ Gemini 2.0 Flash failed, falling back to Gemini Pro Latest:', modelError.message);
+      result = await getModel('gemini-pro-latest').generateContent(prompt);
+    }
+    
+    const response = await result.response;
+    let responseText = response.text().trim();
 
     responseText = responseText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     

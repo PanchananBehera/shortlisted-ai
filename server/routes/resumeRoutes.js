@@ -10,17 +10,18 @@ const storage = multer.memoryStorage();
 
 // 🔹 File filter - PDF ONLY (strict validation)
 const fileFilter = (req, file, cb) => {
-  // Check MIME type
-  if (file.mimetype === 'application/pdf') {
+  const allowedTypes = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ];
+  const allowedExts = ['pdf', 'docx'];
+  
+  const ext = file.originalname?.toLowerCase().split('.').pop();
+  
+  if (allowedTypes.includes(file.mimetype) || allowedExts.includes(ext)) {
     cb(null, true);
-  } 
-  // Fallback: check extension
-  else if (file.originalname?.toLowerCase().endsWith('.pdf')) {
-    cb(null, true);
-  } 
-  // Reject everything else
-  else {
-    cb(new Error('Only PDF files are allowed. Please upload a .pdf file.'), false);
+  } else {
+    cb(new Error('Only PDF and DOCX files are allowed.'), false);
   }
 };
 
