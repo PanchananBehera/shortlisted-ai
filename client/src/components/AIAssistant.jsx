@@ -10,7 +10,7 @@ const AIAssistant = ({ application }) => {
   const [successMessage, setSuccessMessage] = useState('');
 
   // ==========================================
-  // ✅ Generate Cover Letter
+  // ✅ Generate Cover Letter (with field name fallback)
   // ==========================================
   const generateCoverLetter = async () => {
     if (!application) {
@@ -18,14 +18,20 @@ const AIAssistant = ({ application }) => {
       return;
     }
 
-    // ✅ DEBUG: Check what data we have
-    console.log('Application Data:', application);
-    console.log('Company Name:', application.companyName);
-    console.log('Position:', application.position);
-    console.log('Job Description:', application.jobDescription);
+    // ✅ Handle different field name variations (simple fallback)
+    const companyName = application.companyName || application.company || '';
+    const position = application.position || application.role || application.title || '';
+    const jobDescription = application.jobDescription || application.description || '';
 
-    if (!application.companyName || !application.position) {
-      setError('Missing company name or position. Please check the application data.');
+    // ✅ Debug: See what we're actually sending
+    console.log('📤 AI Assistant Debug:', {
+      originalFields: Object.keys(application || {}),
+      mappedValues: { companyName, position, jobDescription: jobDescription ? '...' : 'empty' }
+    });
+
+    // ✅ Validate before sending
+    if (!companyName || !position) {
+      setError(`Missing data! Found: company="${companyName}", position="${position}"`);
       return;
     }
 
@@ -34,36 +40,40 @@ const AIAssistant = ({ application }) => {
     setSuccessMessage('');
 
     try {
-      const payload = {
-        companyName: application.companyName,
-        position: application.position,
-        jobDescription: application.jobDescription || '',
-      };
-
-      console.log('Sending payload:', payload);
-
-      const response = await api.post('/ai/cover-letter', payload);
+      const response = await api.post('/ai/cover-letter', {
+        companyName,
+        position,
+        jobDescription
+      });
 
       if (response.data.success) {
         setCoverLetter(response.data.coverLetter);
         setSuccessMessage('✅ Cover letter generated successfully!');
       }
     } catch (err) {
-      console.error('Cover Letter Error:', err);
-      setError(
-        err.response?.data?.error || 'Failed to generate cover letter. Please try again.'
-      );
+      console.error('❌ Cover Letter Error:', err.response?.data || err.message);
+      setError(err.response?.data?.error || 'Failed to generate cover letter. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   // ==========================================
-  // ✅ Generate Interview Questions
+  // ✅ Generate Interview Questions (with field name fallback)
   // ==========================================
   const generateInterviewQuestions = async () => {
     if (!application) {
       setError('Please select an application first');
+      return;
+    }
+
+    // ✅ Same field name fallback
+    const companyName = application.companyName || application.company || '';
+    const position = application.position || application.role || application.title || '';
+    const jobDescription = application.jobDescription || application.description || '';
+
+    if (!companyName || !position) {
+      setError(`Missing data! Found: company="${companyName}", position="${position}"`);
       return;
     }
 
@@ -73,9 +83,9 @@ const AIAssistant = ({ application }) => {
 
     try {
       const response = await api.post('/ai/interview-qa', {
-        companyName: application.companyName,
-        position: application.position,
-        jobDescription: application.jobDescription || '',
+        companyName,
+        position,
+        jobDescription
       });
 
       if (response.data.success) {
@@ -83,10 +93,8 @@ const AIAssistant = ({ application }) => {
         setSuccessMessage('✅ Interview questions generated successfully!');
       }
     } catch (err) {
-      console.error('Interview Questions Error:', err);
-      setError(
-        err.response?.data?.error || 'Failed to generate interview questions. Please try again.'
-      );
+      console.error('❌ Interview QA Error:', err.response?.data || err.message);
+      setError(err.response?.data?.error || 'Failed to generate interview questions. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -113,7 +121,7 @@ const AIAssistant = ({ application }) => {
         </h2>
         <p className="text-gray-600 dark:text-gray-400 mt-1">
           Generate personalized content powered by Gemini AI — tailored to{' '}
-          {application?.companyName || 'the company'}'s requirements
+          {(application?.companyName || application?.company || 'the company')}'s requirements
         </p>
       </div>
 
@@ -143,7 +151,7 @@ const AIAssistant = ({ application }) => {
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
             Create a professional, tailored cover letter for{' '}
-            {application?.companyName || 'the company'}
+            {(application?.companyName || application?.company || 'the company')}
           </p>
           <button
             onClick={generateCoverLetter}
@@ -152,24 +160,9 @@ const AIAssistant = ({ application }) => {
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
-                <svg
-                  className="animate-spin h-5 w-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
                 Generating...
               </span>
@@ -211,24 +204,9 @@ const AIAssistant = ({ application }) => {
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
-                <svg
-                  className="animate-spin h-5 w-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
                 Generating...
               </span>
@@ -240,18 +218,12 @@ const AIAssistant = ({ application }) => {
           {interviewQuestions.length > 0 && (
             <div className="mt-4 space-y-3 max-h-96 overflow-y-auto">
               {interviewQuestions.map((q, i) => (
-                <div
-                  key={i}
-                  className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700"
-                >
+                <div key={i} className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700">
                   <p className="font-medium text-gray-900 dark:text-white text-sm mb-2">
                     Q{i + 1}: {q.question}
                   </p>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    <span className="font-semibold text-blue-600 dark:text-blue-400">
-                      Answer:
-                    </span>{' '}
-                    {q.answer}
+                    <span className="font-semibold text-blue-600 dark:text-blue-400">Answer:</span> {q.answer}
                   </p>
                 </div>
               ))}
