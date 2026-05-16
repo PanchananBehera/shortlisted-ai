@@ -1,60 +1,46 @@
 // server/controllers/aiController.js
+
+// ✅ 1. IMPORTS (at the top)
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import AnalysisHistory from '../models/AnalysisHistory.js';
-import User from '../models/User.js';
 
-// ✅ Rate limiting store (in production, use Redis)
+// ✅ 2. RATE LIMITING (simple in-memory store)
 const rateLimitStore = new Map();
 
-// Rate limit check function
 const checkRateLimit = (userId, limit = 10, windowMs = 60000) => {
   const now = Date.now();
   const userRequests = rateLimitStore.get(userId) || [];
-  
-  // Remove old requests outside the window
   const recentRequests = userRequests.filter(timestamp => now - timestamp < windowMs);
   
-  if (recentRequests.length >= limit) {
-    return false; // Rate limit exceeded
-  }
+  if (recentRequests.length >= limit) return false;
   
-  // Add new request
   recentRequests.push(now);
   rateLimitStore.set(userId, recentRequests);
   return true;
 };
 
-// ==========================================
-// ✅ 1. ANALYZE RESUME
-// ==========================================
+// ✅ 3. CONTROLLER FUNCTIONS
+
 export const analyzeResume = async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'No file uploaded. Please select a file.' 
-      });
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
     }
 
     if (req.file.size > 5 * 1024 * 1024) {
-      return res.status(413).json({ 
-        success: false, 
-        error: 'File size exceeds 5MB limit.' 
-      });
+      return res.status(413).json({ success: false, error: 'File too large' });
     }
 
-    // Parse PDF/DOCX/TXT
     let extractedText;
     try {
       if (req.file.mimetype === 'application/pdf') {
         const data = await pdfParse(req.file.buffer);
         extractedText = data.text;
       } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        // Use mammoth for DOCX (already installed)
         const mammoth = require('mammoth');
         const result = await mammoth.extractRawText({ buffer: req.file.buffer });
         extractedText = result.value;
@@ -63,73 +49,37 @@ export const analyzeResume = async (req, res) => {
       }
       
       if (!extractedText || extractedText.trim().length === 0) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'Could not extract text from file.' 
-        });
+        return res.status(400).json({ success: false, error: 'Could not extract text' });
       }
     } catch (parseError) {
-      console.error('Parse Error:', parseError);
-      return res.status(500).json({ 
-        success: false, 
-        error: 'Failed to parse file. Please try a different file.' 
-      });
+      return res.status(500).json({ success: false, error: 'Failed to parse file' });
     }
 
-    // Analyze with Gemini
     let analysis;
     try {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
       const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-
-      const prompt = `
-        Analyze this resume and provide ONLY valid JSON (no markdown):
-        {
-          "atsScore": number (0-100),
-          "keywordScore": number (0-100),
-          "formattingScore": number (0-100),
-          "missingKeywords": ["array of strings"],
-          "improvements": ["array of 3 actionable items"],
-          "detectedSkills": ["array of strings"],
-          "experienceLevel": "Entry|Intermediate|Senior|Lead",
-          "atsCompatibility": {
-            "isCompatible": boolean,
-            "issues": ["array of strings"]
-          }
-        }
-        
-        Resume: ${extractedText.substring(0, 3000)}
-      `;
-
+      const prompt = `Analyze this resume and return ONLY valid JSON: {"atsScore":number,"keywordScore":number,"formattingScore":number,"missingKeywords":[],"improvements":[],"detectedSkills":[],"experienceLevel":"string","atsCompatibility":{"isCompatible":boolean,"issues":[]}}. Resume: ${extractedText.substring(0, 3000)}`;
+      
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      const text = response.text();
-      const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-      analysis = JSON.parse(cleanText);
-      
+      const text = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+      analysis = JSON.parse(text);
     } catch (aiError) {
-      console.error('Gemini Error:', aiError);
-      // Fallback analysis
       analysis = {
-        atsScore: 65,
-        keywordScore: 60,
-        formattingScore: 70,
-        missingKeywords: ['JavaScript', 'React', 'Node.js'],
-        improvements: ['Add quantifiable achievements', 'Include technical keywords'],
-        detectedSkills: ['Communication', 'Teamwork'],
+        atsScore: 65, keywordScore: 60, formattingScore: 70,
+        missingKeywords: ['JavaScript', 'React'],
+        improvements: ['Add metrics'],
+        detectedSkills: ['Communication'],
         experienceLevel: 'Intermediate',
         atsCompatibility: { isCompatible: true, issues: [] }
       };
     }
 
-    const overallScore = Math.round(
-      (analysis.atsScore + analysis.keywordScore + analysis.formattingScore) / 3
-    );
-
-    const userId = req.user ? (req.user._id || req.user.id) : null;
-    if (!userId) {
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
-    }
+    const overallScore = Math.round((analysis.atsScore + analysis.keywordScore + analysis.formattingScore) / 3);
+    const userId = req.user?._id || req.user?.id;
+    
+    if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
     const historyEntry = await AnalysisHistory.create({
       userId,
@@ -151,354 +101,201 @@ export const analyzeResume = async (req, res) => {
 
   } catch (error) {
     console.error('Resume Analysis Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to analyze resume. Please try again.' 
-    });
+    res.status(500).json({ success: false, error: 'Failed to analyze resume' });
   }
 };
 
-// ==========================================
-// ✅ 2. GENERATE COVER LETTER (with rate limiting)
-// ==========================================
+// ✅ FIX: Accept both "position" and "jobRole" field names
 export const generateCoverLetter = async (req, res) => {
   try {
-    const { companyName, position, jobDescription } = req.body;
+    const { companyName, position, jobRole, jobDescription } = req.body;
     const userId = req.user?._id || req.user?.id;
+    
+    // ✅ Use position if available, otherwise fall back to jobRole
+    const role = position || jobRole;
 
-    if (!companyName || !position) {
+    if (!companyName || !role) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Company name and position are required' 
+        error: 'Company name and position are required',
+        received: { companyName, position, jobRole }
       });
     }
 
-    // Rate limiting: 5 requests per minute
     if (!checkRateLimit(userId, 5, 60000)) {
-      return res.status(429).json({
-        success: false,
-        error: 'AI Rate limit exceeded. You are generating too fast! Please wait 15-30 seconds and try again.'
-      });
+      return res.status(429).json({ success: false, error: 'Rate limit exceeded. Please wait 30 seconds.' });
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
-    const prompt = `
-      Write a professional cover letter for ${position} at ${companyName}.
-      ${jobDescription ? `Job Description: ${jobDescription}` : ''}
-      
-      Requirements:
-      - Professional tone
-      - 300-400 words
-      - Highlight relevant skills
-      - Show enthusiasm for the role
-      - Proper greeting and closing
-      - Plain text format (no markdown)
-    `;
+    const prompt = `Write a professional cover letter for ${role} at ${companyName}. ${jobDescription ? 'Job Description: ' + jobDescription : ''}. Keep it 300-400 words, professional tone, plain text only.`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const coverLetter = response.text().trim();
 
-    res.json({
-      success: true,
-      coverLetter: coverLetter
-    });
+    res.json({ success: true, coverLetter });
 
   } catch (error) {
     console.error('Cover Letter Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to generate cover letter. Please try again.' 
-    });
+    res.status(500).json({ success: false, error: 'Failed to generate cover letter' });
   }
 };
 
-// ==========================================
-// ✅ 3. GENERATE INTERVIEW QUESTIONS (with rate limiting)
-// ==========================================
+// ✅ FIX: Accept both "position" and "jobRole" field names
 export const generateInterviewQA = async (req, res) => {
   try {
-    const { companyName, position, jobDescription } = req.body;
+    const { companyName, position, jobRole, jobDescription } = req.body;
     const userId = req.user?._id || req.user?.id;
+    
+    // ✅ Use position if available, otherwise fall back to jobRole
+    const role = position || jobRole;
 
-    if (!companyName || !position) {
+    if (!companyName || !role) {
       return res.status(400).json({ 
         success: false, 
-        error: 'Company name and position are required' 
+        error: 'Company name and position are required',
+        received: { companyName, position, jobRole }
       });
     }
 
-    // Rate limiting: 3 requests per minute
     if (!checkRateLimit(userId, 3, 60000)) {
-      return res.status(429).json({
-        success: false,
-        error: 'AI Rate limit exceeded. You are generating too fast! Please wait 15-30 seconds and try again.'
-      });
+      return res.status(429).json({ success: false, error: 'Rate limit exceeded. Please wait 30 seconds.' });
     }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
-    const prompt = `
-      Generate 10 interview questions with answers for ${position} at ${companyName}.
-      ${jobDescription ? `Job Description: ${jobDescription}` : ''}
-      
-      Include:
-      - 3 technical questions
-      - 3 behavioral questions
-      - 2 company-specific questions
-      - 2 situational questions
-      
-      Format as JSON array ONLY (no markdown):
-      [
-        {"question": "Question text", "answer": "Sample answer"},
-        ...
-      ]
-    `;
+    const prompt = `Generate 10 interview questions with answers for ${role} at ${companyName}. ${jobDescription ? 'Job Description: ' + jobDescription : ''}. Return ONLY valid JSON array: [{"question":"text","answer":"text"}].`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
-    const text = response.text();
-    const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    const questions = JSON.parse(cleanText);
+    const text = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    let questions;
+    try {
+      questions = JSON.parse(text);
+    } catch (parseErr) {
+      console.error('JSON Parse Error:', parseErr);
+      // Fallback: try to extract array using regex
+      const match = text.match(/\[\s*\{.*\}\s*\]/s);
+      if (match) {
+        questions = JSON.parse(match[0]);
+      } else {
+        throw new Error('Invalid JSON format from AI');
+      }
+    }
 
-    res.json({
-      success: true,
-      questions: questions.slice(0, 10)
-    });
+    res.json({ success: true, questions: Array.isArray(questions) ? questions.slice(0, 10) : [] });
 
   } catch (error) {
     console.error('Interview QA Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to generate interview questions. Please try again.' 
-    });
+    res.status(500).json({ success: false, error: 'Failed to generate questions' });
   }
 };
 
-// ==========================================
-// ✅ 4. GET ANALYSIS HISTORY
-// ==========================================
 export const getAnalysisHistory = async (req, res) => {
   try {
     const userId = req.user._id || req.user.id;
-    
-    const history = await AnalysisHistory.find({ userId })
-      .sort({ uploadedAt: -1 })
-      .limit(20)
-      .select('resumeName uploadedAt analysis.overallScore analysis.atsScore');
-
-    res.json({
-      success: true,
-      count: history.length,
-      history
-    });
-
+    const history = await AnalysisHistory.find({ userId }).sort({ uploadedAt: -1 }).limit(20);
+    res.json({ success: true, count: history.length, history });
   } catch (error) {
-    console.error('Get History Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch history' 
-    });
+    res.status(500).json({ success: false, error: 'Failed to fetch history' });
   }
 };
 
-// ==========================================
-// ✅ 5. GET ANALYSIS DETAIL
-// ==========================================
 export const getAnalysisDetail = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user._id || req.user.id;
+    const analysis = await AnalysisHistory.findOne({ _id: id, userId });
     
-    const analysis = await AnalysisHistory.findOne({ 
-      _id: id, 
-      userId 
-    });
-
-    if (!analysis) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Analysis not found' 
-      });
-    }
-
-    res.json({
-      success: true,
-      analysis
-    });
-
+    if (!analysis) return res.status(404).json({ success: false, error: 'Not found' });
+    
+    res.json({ success: true, analysis });
   } catch (error) {
-    console.error('Get Detail Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch analysis detail' 
-    });
+    res.status(500).json({ success: false, error: 'Failed to fetch detail' });
   }
 };
 
-// ==========================================
-// ✅ 6. DELETE ANALYSIS
-// ==========================================
 export const deleteAnalysisHistory = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user._id || req.user.id;
+    const deleted = await AnalysisHistory.findOneAndDelete({ _id: id, userId });
     
-    const deleted = await AnalysisHistory.findOneAndDelete({ 
-      _id: id, 
-      userId 
-    });
-
-    if (!deleted) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Analysis not found' 
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Analysis deleted successfully'
-    });
-
+    if (!deleted) return res.status(404).json({ success: false, error: 'Not found' });
+    
+    res.json({ success: true, message: 'Deleted successfully' });
   } catch (error) {
-    console.error('Delete Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to delete analysis' 
-    });
+    res.status(500).json({ success: false, error: 'Failed to delete' });
   }
 };
 
-// ==========================================
-// ✅ 7. EMAIL RESUME
-// ==========================================
 export const emailResume = async (req, res) => {
   try {
     const { email, targetRole, correctedResume, score } = req.body;
     
     if (!email || !correctedResume) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Email and resume content are required' 
-      });
+      return res.status(400).json({ success: false, error: 'Email and resume required' });
     }
 
-    // Use nodemailer (already installed)
     const nodemailer = require('nodemailer');
-    
     const transporter = nodemailer.createTransport({
       service: 'gmail',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
     });
 
-    const mailOptions = {
+    await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
       subject: `Your Optimized Resume - ${targetRole}`,
-      text: `
-        Hi there!
-        
-        Here's your AI-optimized resume for ${targetRole} position.
-        
-        Overall Score: ${score}/100
-        
-        ${correctedResume}
-        
-        Best regards,
-        Shortlisted AI Team
-      `
-    };
-
-    await transporter.sendMail(mailOptions);
-
-    res.json({
-      success: true,
-      message: 'Resume sent successfully!'
+      text: `Overall Score: ${score}/100\n\n${correctedResume}`
     });
+
+    res.json({ success: true, message: 'Email sent successfully!' });
 
   } catch (error) {
-    console.error('Email Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to send email' 
-    });
+    res.status(500).json({ success: false, error: 'Failed to send email' });
   }
 };
 
-// ==========================================
-// ✅ 8. EXPORT ATS REPORT (PDF)
-// ==========================================
 export const exportATSReport = async (req, res) => {
   try {
     const { targetRole, score, atsCheck, roadmap } = req.body;
-    
-    // Use pdfkit (already installed)
     const PDFDocument = require('pdfkit');
     const doc = new PDFDocument();
     
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=ATS_Report_${targetRole.replace(/\s+/g, '_')}.pdf`);
-    
     doc.pipe(res);
     
-    // Header
-    doc.fontSize(24).text('ATS Compatibility Report', { align: 'center' });
-    doc.moveDown();
-    
-    // Score
+    doc.fontSize(24).text('ATS Compatibility Report', { align: 'center' }).moveDown();
     doc.fontSize(18).text(`Target Role: ${targetRole}`);
-    doc.fontSize(24).text(`Overall Score: ${score}/100`, { color: score >= 80 ? '#22c55e' : score >= 50 ? '#eab308' : '#ef4444' });
-    doc.moveDown();
+    doc.fontSize(24).text(`Overall Score: ${score}/100`, { color: score >= 80 ? '#22c55e' : score >= 50 ? '#eab308' : '#ef4444' }).moveDown();
     
-    // ATS Check details
     if (atsCheck) {
-      doc.fontSize(16).text('ATS Analysis:', { underline: true });
-      doc.moveDown();
-      
-      if (atsCheck.isCompatible) {
-        doc.fontSize(12).text('✅ Resume is ATS-compatible', { color: '#22c55e' });
-      } else {
-        doc.fontSize(12).text('❌ Resume has ATS compatibility issues', { color: '#ef4444' });
-      }
-      doc.moveDown();
-      
-      if (atsCheck.issues && atsCheck.issues.length > 0) {
-        doc.fontSize(14).text('Issues Found:', { underline: true });
-        atsCheck.issues.forEach(issue => {
-          doc.fontSize(12).text(`• ${issue}`);
-        });
+      doc.fontSize(16).text('ATS Analysis:', { underline: true }).moveDown();
+      doc.fontSize(12).text(atsCheck.isCompatible ? '✅ Compatible' : '❌ Issues found').moveDown();
+      if (atsCheck.issues?.length) {
+        atsCheck.issues.forEach(issue => doc.fontSize(12).text(`• ${issue}`));
         doc.moveDown();
       }
     }
     
-    // Roadmap
-    if (roadmap && roadmap.length > 0) {
-      doc.fontSize(16).text('Improvement Roadmap:', { underline: true });
-      doc.moveDown();
-      
-      roadmap.slice(0, 5).forEach((step, i) => {
-        doc.fontSize(12).text(`${i + 1}. ${step.actionStep || step}`);
-      });
+    if (roadmap?.length) {
+      doc.fontSize(16).text('Improvements:', { underline: true }).moveDown();
+      roadmap.slice(0, 5).forEach((step, i) => doc.fontSize(12).text(`${i + 1}. ${step.actionStep || step}`));
     }
     
     doc.end();
-
   } catch (error) {
-    console.error('PDF Export Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to generate PDF report' 
-    });
+    res.status(500).json({ success: false, error: 'Failed to generate PDF' });
   }
 };
 
+// ✅ 4. EXPORTS (at the bottom)
 export default {
   analyzeResume,
   generateCoverLetter,
