@@ -6,6 +6,7 @@ const AIAssistant = ({ application }) => {
   const [coverLetter, setCoverLetter] = useState('');
   const [interviewQuestions, setInterviewQuestions] = useState([]);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   // Generate Cover Letter
   const generateCoverLetter = async () => {
@@ -16,9 +17,10 @@ const AIAssistant = ({ application }) => {
 
     setLoading(true);
     setError('');
+    setSuccessMessage('');
 
     try {
-      const response = await api.post('/ai/generate-cover-letter', {
+      const response = await api.post('/ai/cover-letter', {
         companyName: application.companyName,
         position: application.position,
         jobDescription: application.jobDescription || ''
@@ -26,10 +28,11 @@ const AIAssistant = ({ application }) => {
 
       if (response.data.success) {
         setCoverLetter(response.data.coverLetter);
+        setSuccessMessage('✅ Cover letter generated successfully!');
       }
     } catch (err) {
       console.error('Cover Letter Error:', err);
-      setError('Failed to generate cover letter. Please try again.');
+      setError(err.response?.data?.error || 'Failed to generate cover letter. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -44,9 +47,10 @@ const AIAssistant = ({ application }) => {
 
     setLoading(true);
     setError('');
+    setSuccessMessage('');
 
     try {
-      const response = await api.post('/ai/generate-interview-questions', {
+      const response = await api.post('/ai/interview-qa', {
         companyName: application.companyName,
         position: application.position,
         jobDescription: application.jobDescription || ''
@@ -54,13 +58,20 @@ const AIAssistant = ({ application }) => {
 
       if (response.data.success) {
         setInterviewQuestions(response.data.questions);
+        setSuccessMessage('✅ Interview questions generated successfully!');
       }
     } catch (err) {
       console.error('Interview Questions Error:', err);
-      setError('Failed to generate interview questions. Please try again.');
+      setError(err.response?.data?.error || 'Failed to generate interview questions. Please try again.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    setSuccessMessage('📋 Copied to clipboard!');
+    setTimeout(() => setSuccessMessage(''), 2000);
   };
 
   return (
@@ -68,9 +79,16 @@ const AIAssistant = ({ application }) => {
       <div className="mb-6">
         <h2 className="text-2xl font-serif text-gray-900 dark:text-white">✨ AI Assistant</h2>
         <p className="text-gray-600 dark:text-gray-400 mt-1">
-          Generate personalized content powered by Gemini AI — tailored to {application?.companyName || 'TCS'}'s requirements
+          Generate personalized content powered by Gemini AI — tailored to {application?.companyName || 'the company'}'s requirements
         </p>
       </div>
+
+      {/* Success Message */}
+      {successMessage && (
+        <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-xl text-green-700 dark:text-green-300">
+          {successMessage}
+        </div>
+      )}
 
       {/* Error Message */}
       {error && (
@@ -92,19 +110,29 @@ const AIAssistant = ({ application }) => {
           <button
             onClick={generateCoverLetter}
             disabled={loading || !application}
-            className="w-full py-3 bg-green-500 dark:bg-green-600 text-white rounded-xl font-medium hover:bg-green-600 dark:hover:bg-green-500 transition disabled:opacity-50"
+            className="w-full py-3 bg-green-500 dark:bg-green-600 text-white rounded-xl font-medium hover:bg-green-600 dark:hover:bg-green-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Generating...' : 'Generate Cover Letter'}
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Generating...
+              </span>
+            ) : (
+              'Generate Cover Letter'
+            )}
           </button>
 
           {coverLetter && (
             <div className="mt-4 p-4 bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700">
-              <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
+              <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 max-h-96 overflow-y-auto">
                 {coverLetter}
               </pre>
               <button
-                onClick={() => navigator.clipboard.writeText(coverLetter)}
-                className="mt-3 text-sm text-green-600 dark:text-green-400 hover:underline"
+                onClick={() => copyToClipboard(coverLetter)}
+                className="mt-3 text-sm text-green-600 dark:text-green-400 hover:underline font-medium"
               >
                 📋 Copy to Clipboard
               </button>
@@ -124,9 +152,19 @@ const AIAssistant = ({ application }) => {
           <button
             onClick={generateInterviewQuestions}
             disabled={loading || !application}
-            className="w-full py-3 bg-blue-500 dark:bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-600 dark:hover:bg-blue-500 transition disabled:opacity-50"
+            className="w-full py-3 bg-blue-500 dark:bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-600 dark:hover:bg-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Generating...' : 'Generate Questions'}
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Generating...
+              </span>
+            ) : (
+              'Generate Questions'
+            )}
           </button>
 
           {interviewQuestions.length > 0 && (
@@ -137,7 +175,7 @@ const AIAssistant = ({ application }) => {
                     Q{i + 1}: {q.question}
                   </p>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    <span className="font-semibold">Answer:</span> {q.answer}
+                    <span className="font-semibold text-blue-600 dark:text-blue-400">Answer:</span> {q.answer}
                   </p>
                 </div>
               ))}
