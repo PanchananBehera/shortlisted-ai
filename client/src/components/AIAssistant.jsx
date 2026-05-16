@@ -1,3 +1,4 @@
+// client/src/components/AIAssistant.jsx
 import React, { useState } from 'react';
 import api from '../utils/axios';
 
@@ -8,10 +9,23 @@ const AIAssistant = ({ application }) => {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // Generate Cover Letter
+  // ==========================================
+  // ✅ Generate Cover Letter
+  // ==========================================
   const generateCoverLetter = async () => {
     if (!application) {
       setError('Please select an application first');
+      return;
+    }
+
+    // ✅ DEBUG: Check what data we have
+    console.log('Application Data:', application);
+    console.log('Company Name:', application.companyName);
+    console.log('Position:', application.position);
+    console.log('Job Description:', application.jobDescription);
+
+    if (!application.companyName || !application.position) {
+      setError('Missing company name or position. Please check the application data.');
       return;
     }
 
@@ -20,11 +34,15 @@ const AIAssistant = ({ application }) => {
     setSuccessMessage('');
 
     try {
-      const response = await api.post('/ai/cover-letter', {
+      const payload = {
         companyName: application.companyName,
         position: application.position,
-        jobDescription: application.jobDescription || ''
-      });
+        jobDescription: application.jobDescription || '',
+      };
+
+      console.log('Sending payload:', payload);
+
+      const response = await api.post('/ai/cover-letter', payload);
 
       if (response.data.success) {
         setCoverLetter(response.data.coverLetter);
@@ -32,13 +50,17 @@ const AIAssistant = ({ application }) => {
       }
     } catch (err) {
       console.error('Cover Letter Error:', err);
-      setError(err.response?.data?.error || 'Failed to generate cover letter. Please try again.');
+      setError(
+        err.response?.data?.error || 'Failed to generate cover letter. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  // Generate Interview Questions
+  // ==========================================
+  // ✅ Generate Interview Questions
+  // ==========================================
   const generateInterviewQuestions = async () => {
     if (!application) {
       setError('Please select an application first');
@@ -53,7 +75,7 @@ const AIAssistant = ({ application }) => {
       const response = await api.post('/ai/interview-qa', {
         companyName: application.companyName,
         position: application.position,
-        jobDescription: application.jobDescription || ''
+        jobDescription: application.jobDescription || '',
       });
 
       if (response.data.success) {
@@ -62,24 +84,36 @@ const AIAssistant = ({ application }) => {
       }
     } catch (err) {
       console.error('Interview Questions Error:', err);
-      setError(err.response?.data?.error || 'Failed to generate interview questions. Please try again.');
+      setError(
+        err.response?.data?.error || 'Failed to generate interview questions. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  // ==========================================
+  // ✅ Copy to Clipboard Helper
+  // ==========================================
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
     setSuccessMessage('📋 Copied to clipboard!');
     setTimeout(() => setSuccessMessage(''), 2000);
   };
 
+  // ==========================================
+  // ✅ Render Component
+  // ==========================================
   return (
     <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-200/50 dark:border-slate-800">
+      {/* Header */}
       <div className="mb-6">
-        <h2 className="text-2xl font-serif text-gray-900 dark:text-white">✨ AI Assistant</h2>
+        <h2 className="text-2xl font-serif text-gray-900 dark:text-white">
+          ✨ AI Assistant
+        </h2>
         <p className="text-gray-600 dark:text-gray-400 mt-1">
-          Generate personalized content powered by Gemini AI — tailored to {application?.companyName || 'the company'}'s requirements
+          Generate personalized content powered by Gemini AI — tailored to{' '}
+          {application?.companyName || 'the company'}'s requirements
         </p>
       </div>
 
@@ -97,15 +131,19 @@ const AIAssistant = ({ application }) => {
         </div>
       )}
 
+      {/* Main Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Generate Cover Letter */}
+        {/* Generate Cover Letter Card */}
         <div className="p-6 bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-200/50 dark:border-slate-700">
           <div className="flex items-center gap-3 mb-3">
             <span className="text-2xl">✍️</span>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Generate Cover Letter</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Generate Cover Letter
+            </h3>
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Create a professional, tailored cover letter for {application?.companyName || 'the company'}
+            Create a professional, tailored cover letter for{' '}
+            {application?.companyName || 'the company'}
           </p>
           <button
             onClick={generateCoverLetter}
@@ -114,9 +152,24 @@ const AIAssistant = ({ application }) => {
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                <svg
+                  className="animate-spin h-5 w-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
                 </svg>
                 Generating...
               </span>
@@ -140,11 +193,13 @@ const AIAssistant = ({ application }) => {
           )}
         </div>
 
-        {/* Interview Prep Kit */}
+        {/* Interview Prep Kit Card */}
         <div className="p-6 bg-gray-50 dark:bg-slate-800 rounded-xl border border-gray-200/50 dark:border-slate-700">
           <div className="flex items-center gap-3 mb-3">
             <span className="text-2xl">🎯</span>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Interview Prep Kit</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Interview Prep Kit
+            </h3>
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
             10 unique questions with answers — regenerate for fresh ones each time!
@@ -156,9 +211,24 @@ const AIAssistant = ({ application }) => {
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                <svg
+                  className="animate-spin h-5 w-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
                 </svg>
                 Generating...
               </span>
@@ -170,12 +240,18 @@ const AIAssistant = ({ application }) => {
           {interviewQuestions.length > 0 && (
             <div className="mt-4 space-y-3 max-h-96 overflow-y-auto">
               {interviewQuestions.map((q, i) => (
-                <div key={i} className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700">
+                <div
+                  key={i}
+                  className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700"
+                >
                   <p className="font-medium text-gray-900 dark:text-white text-sm mb-2">
                     Q{i + 1}: {q.question}
                   </p>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    <span className="font-semibold text-blue-600 dark:text-blue-400">Answer:</span> {q.answer}
+                    <span className="font-semibold text-blue-600 dark:text-blue-400">
+                      Answer:
+                    </span>{' '}
+                    {q.answer}
                   </p>
                 </div>
               ))}
