@@ -1,4 +1,4 @@
-// src/pages/Register.jsx
+// src/pages/Register.jsx - FIXED
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -37,18 +37,22 @@ const Register = () => {
     setLoading(true);
 
     try {
+      // ✅ Send fullName to match backend User model
       const res = await api.post('/auth/register', {
-        name: formData.name,
+        fullName: formData.name,  // ✅ Map name → fullName
         email: formData.email,
         password: formData.password
       });
 
+      // ✅ Backend returns: { success: true, _id, fullName, email, token }
       const { token, ...userData } = res.data;
       login(token, userData);
       navigate('/dashboard');
       
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed. Email may already be in use.');
+      // ✅ Check BOTH error and message fields for compatibility
+      const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Registration failed. Email may already be in use.';
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }

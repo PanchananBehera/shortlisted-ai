@@ -19,7 +19,6 @@ const userSchema = new mongoose.Schema({
     required: true,
     minlength: 6
   },
-  // 👇 ADD THESE FIELDS IF MISSING 👇
   phone: {
     type: String,
     default: ''
@@ -54,8 +53,11 @@ const userSchema = new mongoose.Schema({
   bio: {
     type: String,
     default: ''
+  },
+  isAdmin: {
+    type: Boolean,
+    default: false
   }
-  // 👆 ADD THESE FIELDS IF MISSING 👆
 }, {
   timestamps: true
 });

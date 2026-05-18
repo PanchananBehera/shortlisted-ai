@@ -1,4 +1,4 @@
-// src/pages/Login.jsx
+// src/pages/Login.jsx - FIXED
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -27,12 +27,15 @@ const Login = () => {
         password: formData.password 
       });
       
+      // ✅ Backend returns: { success: true, _id, fullName, email, token }
       const { token, ...userData } = res.data;
       login(token, userData);
       navigate('/dashboard');
       
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.');
+      // ✅ Check BOTH error and message fields for compatibility
+      const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Login failed. Please try again.';
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }

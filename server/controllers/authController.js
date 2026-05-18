@@ -1,9 +1,11 @@
+// server/controllers/authController.js - FIXED
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';  // ✅ Add bcrypt import
 import User from '../models/User.js';
 
 // Generate JWT Token
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
+  return jwt.sign({ userId: id }, process.env.JWT_SECRET, {  // ✅ Use 'userId' key
     expiresIn: '30d',
   });
 };
@@ -13,35 +15,48 @@ const generateToken = (id) => {
 // @access  Public
 export const registerUser = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, fullName } = req.body;  // ✅ Accept both name/fullName
+
+    // Use fullName if provided, otherwise fallback to name
+    const userName = fullName || name;
+
+    if (!userName || !email || !password) {
+      return res.status(400).json({ success: false, error: 'Please provide all required fields' });
+    }
 
     // Check if user exists
     const userExists = await User.findOne({ email });
-
     if (userExists) {
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(400).json({ success: false, error: 'User already exists' });
     }
 
-    // Create user
+    // ✅ Hash password before saving (CRITICAL FIX)
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create user with hashed password
     const user = await User.create({
-      name,
+      name: userName,
       email,
-      password,
+      password: hashedPassword,  // ✅ Save hashed password
     });
 
     if (user) {
       res.status(201).json({
+        success: true,
         _id: user._id,
         name: user.name,
         email: user.email,
+        isAdmin: user.isAdmin,
         token: generateToken(user._id),
       });
     } else {
-      res.status(400).json({ message: 'Invalid user data' });
+      res.status(400).json({ success: false, error: 'Invalid user data' });
     }
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    // ✅ Use 'error' field to match frontend
+    res.status(500).json({ success: false, error: error.message || 'Server error' });
   }
 };
 
@@ -52,22 +67,29 @@ export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Check for user email
-    const user = await User.findOne({ email });
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: 'Please provide email and password' });
+    }
 
-    if (user && (await user.matchPassword(password))) {
+    // Check for user email
+    const user = await User.findOne({ email }).select('+password');  // ✅ Include password field
+
+    // ✅ Compare password using bcrypt (not model method, to be safe)
+    if (user && (await bcrypt.compare(password, user.password))) {
       res.json({
+        success: true,
         _id: user._id,
         name: user.name,
         email: user.email,
+        isAdmin: user.isAdmin,
         token: generateToken(user._id),
       });
     } else {
-      res.status(401).json({ message: 'Invalid email or password' });
+      res.status(401).json({ success: false, error: 'Invalid email or password' });
     }
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ success: false, error: error.message || 'Server error' });
   }
 };
 
@@ -76,10 +98,17 @@ export const loginUser = async (req, res) => {
 // @access  Private
 export const getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
-    res.status(200).json(user);
+    // ✅ Use req.user._id (MongoDB default) not req.user.id
+    const userId = req.user._id || req.user.id;
+    const user = await User.findById(userId).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    
+    res.status(200).json({ success: true, user });
   } catch (error) {
     console.error('Get profile error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ success: false, error: error.message || 'Server error' });
   }
 };

@@ -6,7 +6,7 @@ import mongoose from 'mongoose';
 // @access  Private
 export const getDashboardStats = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user._id || req.user.id;
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
     // 1. Get Basic Counts

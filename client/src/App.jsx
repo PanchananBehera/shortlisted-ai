@@ -17,7 +17,8 @@ import Profile from './pages/Profile';
 import ResumeAnalyzer from './pages/ResumeAnalyzer';
 import ATSChecker from './pages/ATSChecker';
 import History from './pages/History';
-import AboutUs from './pages/AboutUs'
+import AboutUs from './pages/AboutUs';
+import AdminAnalytics from './pages/AdminAnalytics';
 
 // Main App Component
 function App() {
@@ -127,6 +128,18 @@ function App() {
               <ProtectedRoute>
                 <MainLayout>
                   <History />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ✅ Admin Analytics Route */}
+          <Route
+            path="/admin/analytics"
+            element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <AdminAnalytics />
                 </MainLayout>
               </ProtectedRoute>
             }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { 
   FileText, Phone, PartyPopper, XCircle, 
   Building2, MapPin, Calendar, ChevronRight, Loader2 
@@ -8,6 +9,7 @@ import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid 
 } from 'recharts';
+import api from '../utils/axios';
 
 const COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#06b6d4'];
 
@@ -65,9 +67,9 @@ const Dashboard = () => {
             Track your placement journey
           </p>
         </div>
-        <button className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-full font-medium transition flex items-center gap-2 shadow-lg">
+        <Link to="/applications/new" className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-full font-medium transition flex items-center gap-2 shadow-lg">
           <span>+ Add Application</span>
-        </button>
+        </Link>
       </div>
 
       {/* Stats Cards */}
@@ -152,11 +154,13 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* Recent Applications and AI Activity Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Recent Applications List */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+      <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold dark:text-white"> Recent Applications</h3>
-          <button className="text-sm text-green-500 hover:text-green-600 font-medium">View All</button>
+          <Link to="/applications" className="text-sm text-green-500 hover:text-green-600 font-medium">View All</Link>
         </div>
         
         <div className="overflow-x-auto">
@@ -181,9 +185,9 @@ const Dashboard = () => {
                     </td>
                     <td className="py-4 text-sm text-gray-500">{new Date(app.dateApplied).toLocaleDateString()}</td>
                     <td className="py-4">
-                      <button className="text-green-500 hover:text-green-600">
+                      <Link to={`/applications/${app._id}`} className="text-green-500 hover:text-green-600 inline-block">
                         <ChevronRight className="w-5 h-5" />
-                      </button>
+                      </Link>
                     </td>
                   </tr>
                 ))
@@ -197,6 +201,12 @@ const Dashboard = () => {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* AI Usage Activity */}
+      <div className="lg:col-span-1">
+        <MyAIActivity />
+      </div>
       </div>
     </div>
   );
@@ -230,6 +240,35 @@ const StatusBadge = ({ status }) => {
     <span className={`px-3 py-1 rounded-full text-xs font-semibold ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
       {status}
     </span>
+  );
+};
+
+// In client/src/pages/Dashboard.jsx or new component
+const MyAIActivity = () => {
+  const [activity, setActivity] = useState([]);
+
+  useEffect(() => {
+    api.get('/admin/usage/my-activity')
+      .then(res => setActivity(res.data.logs))
+      .catch(console.error);
+  }, []);
+
+  return (
+    <div className="bg-white p-6 rounded-xl shadow">
+      <h3 className="font-semibold mb-4">🤖 Your AI Usage</h3>
+      <ul className="space-y-3">
+        {activity.map(log => (
+          <li key={log._id} className="flex justify-between text-sm">
+            <span>
+              {log.featureUsed === 'cover-letter' ? '✍️' : '🎯'} {log.companyName}
+            </span>
+            <span className="text-gray-500">
+              {new Date(log.createdAt).toLocaleDateString()}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 };
 

@@ -10,6 +10,8 @@ const Navbar = () => {
   const location = useLocation();
   const { isDark, toggleDarkMode } = useDarkMode();
 
+
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -72,8 +74,14 @@ const Navbar = () => {
             </Link>
             {/* ✅ NEW: About Link */}
             <Link to="/about" className={getLinkClass('/about')}>
-              🌿About
+              🌿 About
             </Link>
+            {/* Admin Analytics - only for admins */}
+            {user?.isAdmin && (
+              <Link to="/admin/analytics" className={getLinkClass('/admin/analytics')}>
+                📊 Analytics
+              </Link>
+            )}
           </div>
 
           {/* User Menu + Dark Mode Toggle */}
@@ -84,6 +92,8 @@ const Navbar = () => {
               </span>
             )}
             
+
+
             {/* 🌙 Dark Mode Toggle Button */}
             <button
               onClick={toggleDarkMode}
@@ -126,6 +136,9 @@ const Navbar = () => {
           <Link to="/history" className={getMobileClass('/history')}>📈</Link>
           {/* ✅ NEW: Mobile About Link */}
           <Link to="/about" className={getMobileClass('/about')}>🌿</Link>
+          {user?.isAdmin && (
+            <Link to="/admin/analytics" className={getMobileClass('/admin/analytics')}>📊</Link>
+          )}
         </div>
       </div>
     </nav>

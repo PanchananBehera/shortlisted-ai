@@ -14,12 +14,12 @@ const ATSChecker = () => {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+      const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'text/plain'];
       const fileExt = file.name.split('.').pop().toLowerCase();
-      const validExts = ['pdf', 'docx', 'txt'];
+      const validExts = ['pdf', 'docx', 'doc', 'txt'];
       
       if (!validTypes.includes(file.type) && !validExts.includes(fileExt)) {
-        setError('Please upload a PDF, DOCX, or TXT file');
+        setError('Please upload a PDF, DOCX, DOC, or TXT file');
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
@@ -150,7 +150,7 @@ const ATSChecker = () => {
             <div className="relative">
               <input
                 type="file"
-                accept=".pdf,.docx,.txt"
+                accept=".pdf,.docx,.doc,.txt"
                 onChange={handleFileChange}
                 className="hidden"
                 id="ats-resume-upload"
@@ -166,7 +166,7 @@ const ATSChecker = () => {
                   <p className="mb-2 text-sm text-gray-600 dark:text-gray-400 transition-colors">
                     <span className="font-semibold">Click to upload</span> or drag and drop
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-500 transition-colors">PDF, DOCX, or TXT (MAX. 5MB)</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-500 transition-colors">PDF, DOCX, DOC, or TXT (MAX. 5MB)</p>
                 </div>
               </label>
             </div>

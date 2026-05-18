@@ -250,6 +250,7 @@ const ResumeAnalyzer = () => {
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
+    alert('📋 Optimized resume copied to clipboard!');
   };
 
   const downloadPDF = async () => {

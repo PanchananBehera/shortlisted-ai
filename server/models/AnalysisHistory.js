@@ -1,64 +1,52 @@
-// server/models/AnalysisHistory.js
 import mongoose from 'mongoose';
 
 const analysisHistorySchema = new mongoose.Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  targetRole: { type: String, required: true },
-  jobDescription: { type: String, trim: true },
-  
-  // Analysis results
-  score: { type: Number, required: true },
-  strengths: [String],
-  weaknesses: [String],
-  missingSkills: [String],
-  improvements: [String],
-  issues: [{
-    type: { type: String },
-    description: String,
-    severity: { type: String, enum: ['Low', 'Medium', 'High'] }
-  }],
-  
-  // ATS Check data
-  atsCheck: {
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  resumeName: { type: String, required: true },
+  uploadedAt: { type: Date, default: Date.now },
+  analysis: {
+    score: Number,
+    atsScore: Number,
+    keywordScore: Number,
+    formattingScore: Number,
     overallScore: Number,
-    keywordMatch: {
-      score: Number,
-      matchedKeywords: [String],
-      missingKeywords: [String]
-    },
-    formatting: {
-      hasTables: Boolean,
-      hasGraphics: Boolean,
-      hasColumns: Boolean,
-      usesStandardHeadings: Boolean,
-      fontCompatibility: String,
-      issues: [String]
-    },
-    recommendations: [String]
-  },
-  
-  // Roadmap
-  roadmap: [{
-    skill: String,
-    actionStep: String,
-    priority: { type: String, enum: ['Critical', 'Important', 'Optional'] },
-    timeEstimate: String,
-    resources: [String]
-  }],
-  
-  // Optimized resume text
-  correctedResume: { type: String, required: true },
-  
-  // Metadata
-  fileName: String,
-  createdAt: { type: Date, default: Date.now }
-});
-
-// Index for faster queries
-analysisHistorySchema.index({ userId: 1, createdAt: -1 });
+    strengths: [String],
+    weaknesses: [String],
+    missingSkills: [String],
+    missingKeywords: [String],
+    improvements: [String],
+    detectedSkills: [String],
+    experienceLevel: String,
+    correctedResume: String,
+    roadmap: [{
+      skill: String,
+      priority: String,
+      actionStep: String,
+      timeEstimate: String,
+      resources: [String]
+    }],
+    issues: [{
+      type: { type: String },
+      description: String,
+      severity: String
+    }],
+    atsCheck: {
+      overallScore: Number,
+      keywordMatch: {
+        matchedKeywords: [String],
+        missingKeywords: [String]
+      },
+      formatting: {
+        hasTables: Boolean,
+        hasGraphics: Boolean,
+        hasColumns: Boolean,
+        usesStandardHeadings: Boolean,
+        fontCompatibility: String,
+        issues: [String]
+      },
+      recommendations: [String]
+    }
+  }
+}, { timestamps: true });
 
 export default mongoose.model('AnalysisHistory', analysisHistorySchema);

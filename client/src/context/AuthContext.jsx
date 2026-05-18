@@ -17,11 +17,28 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
-      const userData = JSON.parse(localStorage.getItem('user') || '{}');
-      setUser(userData);
+    if (!token) {
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+    // Load cached user immediately so UI isn't blank
+    const cachedUser = JSON.parse(localStorage.getItem('user') || '{}');
+    setUser(cachedUser);
+
+    // Then fetch fresh data from server (picks up isAdmin changes etc.)
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.user) {
+          const freshUser = data.user;
+          localStorage.setItem('user', JSON.stringify(freshUser));
+          setUser(freshUser);
+        }
+      })
+      .catch(() => {/* silently keep cached user */})
+      .finally(() => setLoading(false));
   }, []);
 
   const login = (token, userData) => {
