@@ -1,3 +1,4 @@
+// client/tailwind.config.js - ESM FORMAT ✅
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
