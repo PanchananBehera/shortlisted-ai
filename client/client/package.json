@@ -1,0 +1,9 @@
+{
+  "name": "shortlisted-ai-client-wrapper",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "preinstall": "cd .. && npm install",
+    "build": "cd .. && npm run build && mkdir -p client/dist && cp -r dist client/"
+  }
+}
