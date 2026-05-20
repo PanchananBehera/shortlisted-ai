@@ -1,17 +1,42 @@
 {
-  "name": "ai-job-tracker",
+  "name": "shortlisted-ai",
   "version": "1.0.0",
   "private": true,
-  "description": "AI-Powered Job Application Tracker",
+  "description": "AI-Powered Job Application Tracker - Shortlisted AI",
+  "homepage": "https://github.com/PanchananBehera/shortlisted-ai#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PanchananBehera/shortlisted-ai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PanchananBehera/shortlisted-ai/issues"
+  },
   "scripts": {
     "server": "cd server && npm run dev",
     "client": "cd client && npm run dev",
-    "dev": "concurrently \"npm run server\" \"npm run client\""
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "build": "cd client && npm install && npm run build",
+    "start": "cd server && npm start",
+    "postinstall": "cd server && npm install && cd ../client && npm install"
   },
-  "keywords": ["job-tracker", "ai", "mern", "placement"],
-  "author": "Chintu",
+  "keywords": [
+    "job-tracker",
+    "ai",
+    "resume-analyzer",
+    "cover-letter-generator",
+    "interview-prep",
+    "placement",
+    "mern-stack"
+  ],
+  "author": {
+    "name": "Chintu Behera",
+    "url": "https://github.com/PanchananBehera"
+  },
   "license": "MIT",
-  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
   "devDependencies": {
     "concurrently": "^9.2.1"
   }
