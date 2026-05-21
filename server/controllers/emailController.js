@@ -1,5 +1,5 @@
 // server/controllers/emailController.js
-import { sendEmail } from '../utils/email.js';
+import { sendEmail } from '../utils/emails.js';
 
 export const emailResume = async (req, res) => {
   try {

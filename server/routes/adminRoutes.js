@@ -152,56 +152,60 @@ router.get('/usage/advanced', protect, admin, async (req, res) => {
       .sort((a, b) => b.engagementScore - a.engagementScore)
       .slice(0, 10);
 
-    // AI-Powered Insights
-    const insights = [];
-    
-    // Most popular feature
+    // AI-Powered Insights — always generate all 4 cards with smart contextual messages
     const featureCounts = {};
     allLogs.forEach(log => {
       featureCounts[log.featureUsed] = (featureCounts[log.featureUsed] || 0) + 1;
     });
     const topFeature = Object.entries(featureCounts).sort((a, b) => b[1] - a[1])[0];
-    if (topFeature) {
-      insights.push({
+    const errorRate = allLogs.length > 0 ? (allLogs.filter(l => !l.success).length / allLogs.length * 100) : 0;
+    const powerUsers = Object.values(userEngagement).filter(u => u.engagementScore >= 70);
+    const usersWithSingleFeature = Object.values(userEngagement).filter(u => u.featuresUsed.length === 1).length;
+    const totalUsersEngaged = Object.keys(userEngagement).length;
+
+    // Card 1 — Most Popular Feature (always)
+    const insights = [
+      {
         type: 'success',
         title: '🔥 Most Popular Feature',
-        description: `${topFeature[0].replace('-', ' ')} is your most used feature with ${topFeature[1]} uses`,
-        action: 'Consider promoting this feature on the homepage'
-      });
-    }
+        description: topFeature
+          ? `"${topFeature[0].replace(/-/g, ' ')}" leads with ${topFeature[1]} uses this period`
+          : 'No AI features used yet — share the app to get started!',
+        action: topFeature ? 'Consider promoting this feature on the homepage' : 'Encourage users to try Resume Analyzer first'
+      },
 
-    // Error rate alert
-    const errorRate = allLogs.length > 0 ? (allLogs.filter(l => !l.success).length / allLogs.length * 100) : 0;
-    if (errorRate > 15) {
-      insights.push({
-        type: 'warning',
-        title: '⚠️ High Error Rate',
-        description: `${errorRate.toFixed(1)}% of requests are failing`,
-        action: 'Check backend logs and error handling'
-      });
-    }
+      // Card 2 — Error Rate (always, with positive spin if low)
+      {
+        type: errorRate > 15 ? 'warning' : 'success',
+        title: errorRate > 15 ? '⚠️ High Error Rate Detected' : '✅ System Health: Excellent',
+        description: errorRate > 15
+          ? `${errorRate.toFixed(1)}% of AI requests are failing — needs attention`
+          : `Only ${errorRate.toFixed(1)}% error rate — all AI features running smoothly`,
+        action: errorRate > 15 ? 'Check backend logs and Gemini API quota' : 'Keep monitoring as user base grows'
+      },
 
-    // Power users
-    const powerUsers = Object.values(userEngagement).filter(u => u.engagementScore >= 70);
-    if (powerUsers.length > 0) {
-      insights.push({
+      // Card 3 — Power Users (always)
+      {
         type: 'info',
-        title: '🌟 Power Users Detected',
-        description: `${powerUsers.length} users have engagement scores above 70`,
-        action: 'Reach out for testimonials or beta features'
-      });
-    }
+        title: powerUsers.length > 0 ? '🌟 Power Users Active' : '📈 Growing User Base',
+        description: powerUsers.length > 0
+          ? `${powerUsers.length} of ${totalUsersEngaged} users have 70+ engagement scores`
+          : `${totalUsersEngaged} users active — nurture them into power users`,
+        action: powerUsers.length > 0 ? 'Reach out for testimonials or beta features' : 'Send re-engagement emails to boost activity'
+      },
 
-    // Feature discovery gap
-    const usersWithSingleFeature = Object.values(userEngagement).filter(u => u.featuresUsed.length === 1).length;
-    if (usersWithSingleFeature > Object.keys(userEngagement).length * 0.5) {
-      insights.push({
-        type: 'suggestion',
-        title: '💡 Feature Adoption Opportunity',
-        description: `${usersWithSingleFeature} users only use 1 feature`,
-        action: 'Add in-app tours to encourage feature discovery'
-      });
-    }
+      // Card 4 — Feature Adoption (always)
+      {
+        type: usersWithSingleFeature > totalUsersEngaged * 0.5 ? 'suggestion' : 'info',
+        title: usersWithSingleFeature > totalUsersEngaged * 0.5 ? '💡 Feature Discovery Gap' : '🎯 Good Feature Adoption',
+        description: usersWithSingleFeature > totalUsersEngaged * 0.5
+          ? `${usersWithSingleFeature} users only use 1 feature — huge growth opportunity`
+          : `Users are exploring multiple features — great cross-adoption!`,
+        action: usersWithSingleFeature > totalUsersEngaged * 0.5
+          ? 'Add in-app tooltips and feature discovery tours'
+          : 'Keep adding features to maintain engagement momentum'
+      }
+    ];
 
     // Feature adoption funnel
     const totalUsersCount = Object.keys(userEngagement).length;

@@ -66,14 +66,12 @@ const AdvancedAnalytics = () => {
           </div>
         </div>
 
-        {/* AI Insights Cards */}
-        {data?.advanced?.insights?.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {data.advanced.insights.map((insight, idx) => (
-              <InsightCard key={idx} insight={insight} />
-            ))}
-          </div>
-        )}
+        {/* AI Insights Cards — always 4 cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {(data?.advanced?.insights || []).map((insight, idx) => (
+            <InsightCard key={idx} insight={insight} />
+          ))}
+        </div>
 
         {/* Key Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

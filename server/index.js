@@ -9,6 +9,7 @@ import aiRoutes from './routes/aiRoutes.js';
 import applicationRoutes from './routes/applicationRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import profileRoutes from './routes/profile.js';
+import profileControllerRoutes from './routes/profileRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 
 const app = express();
@@ -31,6 +32,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/user/profile', profileRoutes);
+app.use('/api/profile', profileControllerRoutes);
 app.use('/api/admin', adminRoutes);
 
 app.get('/api/health', (req, res) => {

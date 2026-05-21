@@ -22,6 +22,29 @@ const checkRateLimit = (userId, limit = 20, windowMs = 60000) => {
   return true;
 };
 
+// ✅ API Key Rotation & Fallback to bypass Rate Limits
+let currentKeyIndex = 0;
+const generateContentWithRetry = async (prompt, modelName = 'gemini-2.0-flash', retries = 0) => {
+  const keys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k);
+  if (keys.length === 0) throw new Error("GEMINI_API_KEY is not set in .env");
+  
+  const keyToUse = keys[currentKeyIndex];
+  const genAI = new GoogleGenerativeAI(keyToUse);
+  const model = genAI.getGenerativeModel({ model: modelName });
+
+  try {
+    const result = await model.generateContent(prompt);
+    return await result.response;
+  } catch (error) {
+    if ((error.message?.includes('429') || error.message?.includes('quota') || error.message?.includes('exceeded')) && keys.length > 1 && retries < keys.length) {
+      console.warn(`API Key ${currentKeyIndex + 1} hit rate limit. Rotating to next key...`);
+      currentKeyIndex = (currentKeyIndex + 1) % keys.length;
+      return generateContentWithRetry(prompt, modelName, retries + 1);
+    }
+    throw error;
+  }
+};
+
 // ✅ 2.1 CACHING
 const aiCache = new Map();
 setInterval(() => aiCache.clear(), 30 * 60 * 1000);
@@ -44,11 +67,8 @@ export const analyzeResume = async (req, res) => {
     try {
       const ext = req.file.originalname ? req.file.originalname.split('.').pop().toLowerCase() : '';
       if (req.file.mimetype === 'application/pdf' || ext === 'pdf') {
-        const { PDFParse } = require('pdf-parse');
-        const parser = new PDFParse({ data: req.file.buffer });
-        const data = await parser.getText();
-        extractedText = data.text;
-        await parser.destroy();
+        const pdfParseData = await pdfParse(req.file.buffer);
+        extractedText = pdfParseData.text;
       } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === 'docx') {
         const mammoth = require('mammoth');
         const result = await mammoth.extractRawText({ buffer: req.file.buffer });
@@ -71,117 +91,28 @@ export const analyzeResume = async (req, res) => {
 
     let analysis;
     try {
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-      
       const prompt = `You are an expert ATS optimizer. Analyze resume for role: "${targetRole}". ${jobDescription ? `Job Description:\n${jobDescription}\n` : ''}
 Return ONLY valid JSON: { "score": number, "atsScore": number, "keywordScore": number, "formattingScore": number, "overallScore": number, "strengths": [], "weaknesses": [], "missingSkills": [], "missingKeywords": [], "improvements": [], "detectedSkills": [], "experienceLevel": "string", "correctedResume": "string", "roadmap": [], "issues": [], "atsCheck": { "overallScore": number, "keywordMatch": { "matchedKeywords": [], "missingKeywords": [] }, "formatting": { "hasTables": boolean, "hasGraphics": boolean, "hasColumns": boolean, "usesStandardHeadings": boolean, "fontCompatibility": "string", "issues": [] }, "recommendations": [] } }
 Resume Text: ${extractedText.substring(0, 4000)}`;
       
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-      analysis = JSON.parse(text);
+      const response = await generateContentWithRetry(prompt, 'gemini-2.0-flash');
+      const text = response.text();
+      
+      try {
+        const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+        analysis = JSON.parse(cleanText);
+      } catch (parseErr) {
+        // Fallback: extract JSON object via regex if there's extra conversational text
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) {
+          analysis = JSON.parse(match[0]);
+        } else {
+          throw new Error('Invalid JSON format from AI');
+        }
+      }
     } catch (aiError) {
-      console.warn('Gemini API fallback:', aiError.message);
-      analysis = { 
-        score: 72, 
-        atsScore: 75, 
-        keywordScore: 65, 
-        formattingScore: 80, 
-        overallScore: 72, 
-        strengths: [
-          'Clear and standard formatting that ATS can easily parse',
-          'Good use of action verbs in the recent experience section',
-          'Education section is well-structured and easy to find',
-          'Contact information is complete and prominently displayed'
-        ], 
-        weaknesses: [
-          'Lacks quantifiable metrics (e.g., "increased sales by 20%") to demonstrate impact',
-          'Missing several key skills mentioned in the job description',
-          'Summary section is too generic and not tailored to the specific role',
-          'Some bullet points are too long and should be broken down for readability'
-        ], 
-        missingSkills: ['React', 'Node.js', 'AWS', 'Docker'], 
-        missingKeywords: ['Microservices', 'CI/CD', 'Agile Methodology', 'RESTful APIs'], 
-        improvements: [
-          'Add specific numbers and percentages to your achievements to show measurable impact.',
-          'Incorporate the missing keywords (React, Node.js, AWS) naturally into your experience bullet points.',
-          'Rewrite your professional summary to specifically mention your passion for this target role and industry.',
-          'Shorten bullet points to a maximum of two lines each to improve scannability.',
-          'Add a dedicated "Projects" section to highlight relevant technical work if experience is light.'
-        ], 
-        detectedSkills: ['JavaScript', 'HTML', 'CSS', 'Git', 'Problem Solving', 'Team Leadership'], 
-        experienceLevel: 'Intermediate', 
-        correctedResume: `JOHN DOE
-San Francisco, CA | (555) 123-4567 | john.doe@email.com | linkedin.com/in/johndoe | github.com/johndoe
-
-PROFESSIONAL SUMMARY
-Results-driven Software Engineer with 4+ years of experience designing, developing, and deploying scalable web applications. Proven expertise in JavaScript, React, Node.js, and AWS. Adept at optimizing system performance, reducing load times by up to 40%, and leading cross-functional teams to deliver projects ahead of schedule. Passionate about building intuitive user interfaces and robust backend architectures.
-
-TECHNICAL SKILLS
-Languages: JavaScript (ES6+), TypeScript, HTML5, CSS3, Python
-Frontend: React.js, Redux, Next.js, Tailwind CSS, Material-UI
-Backend: Node.js, Express.js, RESTful APIs, GraphQL
-Databases: MongoDB, PostgreSQL, Redis
-DevOps & Cloud: AWS (EC2, S3, RDS), Docker, CI/CD (GitHub Actions), Git
-
-PROFESSIONAL EXPERIENCE
-
-Senior Software Engineer | Tech Innovators Inc. | San Francisco, CA
-January 2021 – Present
-• Architected and migrated a legacy monolithic application to a microservices architecture using Node.js and Docker, improving system reliability by 35% and reducing deployment times by 50%.
-• Spearheaded the development of a highly interactive analytics dashboard using React and D3.js, enabling enterprise clients to visualize data trends and increasing user engagement by 25%.
-• Optimized database queries and implemented Redis caching, resulting in a 40% decrease in API response times across core endpoints.
-• Mentored a team of 4 junior developers, conducting code reviews and establishing best practices that reduced production bugs by 15%.
-
-Software Engineer | WebSolutions LLC | Austin, TX
-June 2018 – December 2020
-• Developed and maintained multiple responsive, mobile-first web applications using React and Tailwind CSS, serving over 100,000 monthly active users.
-• Integrated third-party payment gateways (Stripe, PayPal) into an e-commerce platform, processing over $500K in monthly transactions with 99.9% uptime.
-• Collaborated with UX/UI designers to implement accessible components, ensuring WCAG 2.1 AA compliance across all client-facing applications.
-• Automated testing using Jest and Cypress, achieving 85% test coverage and significantly reducing regression issues during weekly releases.
-
-EDUCATION
-Bachelor of Science in Computer Science
-University of Texas at Austin | May 2018
-• Relevant Coursework: Data Structures, Algorithms, Database Systems, Web Engineering
-• Honors: Cum Laude (GPA: 3.7/4.0)
-
-PROJECTS
-TaskFlow Management System
-• Built a full-stack project management tool utilizing React, Node.js, and MongoDB.
-• Implemented real-time updates using Socket.io and secure user authentication with JWT.
-• Deployed the application to AWS EC2, handling an average of 500 concurrent users seamlessly.`,
-        roadmap: [
-          { skill: 'React & State Management', actionStep: 'Build a complex SPA using React and Redux/Zustand to demonstrate proficiency.', timeEstimate: '2-3 weeks', priority: 'Critical' },
-          { skill: 'Cloud Deployment (AWS)', actionStep: 'Deploy a full-stack application to AWS using EC2, S3, and RDS.', timeEstimate: '3-4 weeks', priority: 'Important' },
-          { skill: 'CI/CD Pipelines', actionStep: 'Set up GitHub Actions to automatically test and deploy your personal projects.', timeEstimate: '1 week', priority: 'Medium' }
-        ], 
-        issues: [
-          { type: 'Formatting', description: 'Inconsistent date formatting across work experiences.', severity: 'Medium' },
-          { type: 'Compatibility', description: 'Use of an uncommon font which may not be ATS compliant.', severity: 'Low' }
-        ], 
-        atsCheck: { 
-          overallScore: 75, 
-          keywordMatch: { 
-            matchedKeywords: ['JavaScript', 'HTML', 'CSS', 'Git', 'Frontend'], 
-            missingKeywords: ['React', 'Node.js', 'AWS', 'Docker', 'Microservices', 'CI/CD'] 
-          }, 
-          formatting: { 
-            hasTables: false, 
-            hasGraphics: false, 
-            hasColumns: false, 
-            usesStandardHeadings: true, 
-            fontCompatibility: 'Good', 
-            issues: [] 
-          }, 
-          recommendations: [
-            'Ensure all standard section headings like "Work Experience" and "Education" are used exactly as written.',
-            'Remove any complex formatting elements like text boxes or columns.'
-          ] 
-        } 
-      };
+      console.warn('Gemini API Error for Resume Analysis:', aiError.message);
+      throw aiError;
     }
 
     const overallScore = analysis.score || analysis.overallScore || Math.round((analysis.atsScore + analysis.keywordScore + analysis.formattingScore) / 3);
@@ -234,7 +165,9 @@ TaskFlow Management System
       userAgent: req?.get('User-Agent'),
       req
     });
-    
+    if (error.message?.includes('429') || error.message?.includes('quota') || error.message?.includes('exceeded')) {
+      return res.status(429).json({ success: false, error: 'AI quota exceeded. Please wait 1 minute.' });
+    }
     res.status(500).json({ success: false, error: 'Failed to analyze resume' });
   }
 };
@@ -250,44 +183,31 @@ export const generateCoverLetter = async (req, res) => {
     if (!companyName || !role) return res.status(400).json({ success: false, error: 'Company name and position are required' });
     if (!checkRateLimit(userId, 20, 60000)) return res.status(429).json({ success: false, error: 'Please wait 30 seconds before generating again.' });
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
     const profileText = profile ? `Applicant: ${profile.fullName || ''} | Title: ${profile.jobTitle || ''} | Skills: ${Array.isArray(profile.skills) ? profile.skills.join(', ') : profile.skills || ''}` : '';
-    const prompt = `Write a professional cover letter for ${role} at ${companyName}. ${jobDescription ? 'Job: ' + jobDescription : ''} ${profileText ? 'Applicant: ' + profileText : ''} Keep it 300-400 words, professional tone, plain text only.`;
 
-    const cacheKey = getCacheKey('cover-letter', { companyName, role, jobDescription });
-    if (aiCache.has(cacheKey) && !req.body.regenerate) {
-      return res.json({ success: true, coverLetter: aiCache.get(cacheKey), cached: true });
-    }
+    // Random seed + varied style instruction so each generation is unique
+    const randomSeed = Math.random().toString(36).substring(2, 10);
+    const styles = [
+      'confident and achievement-focused',
+      'enthusiastic and story-driven',
+      'concise and impact-oriented',
+      'professional and detail-oriented',
+      'warm and culture-focused'
+    ];
+    const chosenStyle = styles[Math.floor(Math.random() * styles.length)];
+    const prompt = `Write a UNIQUE professional cover letter for ${role} at ${companyName}. Style: ${chosenStyle}. ${jobDescription ? 'Job Description: ' + jobDescription : ''} ${profileText ? 'About the applicant: ' + profileText : ''} Keep it 300-400 words, plain text only. Make it feel personal and varied — avoid generic phrases. Ref: ${randomSeed}`;
+
+    // ✅ Never cache cover letters — always generate fresh unique content
+    // (caching was causing repeated identical letters on regenerate)
 
     let coverLetter;
     try {
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
+      const response = await generateContentWithRetry(prompt, 'gemini-2.0-flash');
       coverLetter = response.text().trim();
     } catch (aiError) {
-      console.warn('Gemini API fallback for Cover Letter:', aiError.message);
-      coverLetter = `Dear Hiring Manager,
-
-I am writing to express my enthusiastic interest in the ${role} position at ${companyName}, as recently advertised. With a robust academic background, a proven track record of technical achievements, and a deep-seated passion for innovative problem-solving, I am confident in my ability to make an immediate, impactful contribution to your esteemed team.
-
-Throughout my career and academic journey, I have consistently demonstrated a capacity to learn rapidly, adapt to new technologies, and deliver high-quality results under pressure. My expertise aligns closely with the requirements outlined in your job description. Specifically, I have cultivated strong skills in software development, project management, and collaborative teamwork, which I believe are directly applicable to the challenges and goals of ${companyName}.
-
-One of my most defining professional experiences involved leading a complex project where I successfully integrated disparate systems to improve overall efficiency. This experience not only honed my technical capabilities but also taught me the invaluable importance of clear communication, strategic planning, and meticulous attention to detail. I am particularly drawn to ${companyName} because of your unwavering commitment to excellence and your reputation as an industry leader. I am eager to bring my unique blend of skills, creativity, and dedication to your organization to help drive continued growth and success.
-
-I am highly self-motivated and thrive in environments that challenge me to push boundaries and think outside the box. I am confident that my proactive approach, coupled with my strong analytical skills, will enable me to seamlessly integrate into your team and begin contributing from day one. I am continually seeking opportunities for professional growth and am excited about the prospect of developing my career within such a dynamic and forward-thinking company.
-
-Thank you very much for your time and consideration. I am highly enthusiastic about the possibility of joining ${companyName} and would welcome the opportunity to discuss my qualifications with you in more detail during an interview. I have attached my resume for your review and look forward to hearing from you soon.
-
-Sincerely,
-
-[Your Name]
-[Your Phone Number]
-[Your Email Address]
-[Your LinkedIn Profile]`;
+      console.warn('Gemini API Error for Cover Letter:', aiError.message);
+      throw aiError;
     }
-    aiCache.set(cacheKey, coverLetter);
 
     // ✅ LOG SUCCESSFUL USAGE
     const responseTime = Date.now() - startTime;
@@ -349,20 +269,18 @@ export const generateInterviewQA = async (req, res) => {
     if (!companyName || !role) return res.status(400).json({ success: false, error: 'Company name and position are required' });
     if (!checkRateLimit(userId, 20, 60000)) return res.status(429).json({ success: false, error: 'Please wait 30 seconds before generating again.' });
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    // Add random seed + timestamp so Gemini always generates fresh unique questions
+    const randomSeed = Math.random().toString(36).substring(2, 8);
+    const prompt = `Generate 10 UNIQUE and VARIED interview questions with detailed answers for the ${role} position at ${companyName}. ${jobDescription ? 'Job Description: ' + jobDescription : ''}
+IMPORTANT: Make questions fresh and different each time. Vary the difficulty and categories. Seed: ${randomSeed}.
+Return ONLY valid JSON array: [{"question":"text","answer":"text","category":"Technical|Behavioral|HR|System Design|Company-Specific","difficulty":"Easy|Medium|Hard"}]`;
 
-    const prompt = `Generate 10 interview questions with answers for ${role} at ${companyName}. ${jobDescription ? 'Job: ' + jobDescription : ''} Return ONLY valid JSON array: [{"question":"text","answer":"text","category":"Technical|Behavioral|HR|System Design|Company-Specific","difficulty":"Easy|Medium|Hard"}]`;
-
-    const cacheKey = getCacheKey('interview-qa', { companyName, role, jobDescription });
-    if (aiCache.has(cacheKey) && !req.body.regenerate) {
-      return res.json({ success: true, questions: aiCache.get(cacheKey), cached: true });
-    }
+    // ✅ Never cache interview questions — always generate fresh ones for "New Questions"
+    // (cover-letter caching is fine since it rarely needs regeneration)
 
     let questions;
     try {
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
+      const response = await generateContentWithRetry(prompt, 'gemini-2.0-flash');
       const text = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
       
       try {
@@ -373,24 +291,11 @@ export const generateInterviewQA = async (req, res) => {
         else throw new Error('Invalid JSON format from AI');
       }
     } catch (aiError) {
-      console.warn('Gemini API fallback for Interview QA:', aiError.message);
-      questions = [
-        { question: `Why are you interested in the ${role} position at ${companyName}?`, answer: 'Focus on aligning your goals with the company mission and how your skills match the role.', category: 'Behavioral', difficulty: 'Easy' },
-        { question: 'Can you describe a challenging project you worked on and how you handled it?', answer: 'Use the STAR method (Situation, Task, Action, Result) to structure your response.', category: 'Behavioral', difficulty: 'Medium' },
-        { question: `What specific skills do you bring to ${companyName} for this role?`, answer: 'Highlight 2-3 key technical or soft skills directly relevant to the job description.', category: 'HR', difficulty: 'Easy' },
-        { question: 'Describe a time you disagreed with a colleague or manager. How did you resolve it?', answer: 'Focus on communication, professionalism, and reaching a constructive compromise.', category: 'Behavioral', difficulty: 'Medium' },
-        { question: 'Where do you see yourself in 3-5 years?', answer: 'Express ambition that aligns with the career path of this specific role and the company.', category: 'HR', difficulty: 'Medium' },
-        { question: 'What is your greatest professional achievement so far?', answer: 'Choose an achievement that highlights skills required for this job, and quantify the impact if possible.', category: 'Behavioral', difficulty: 'Medium' },
-        { question: 'How do you prioritize your work when dealing with multiple tight deadlines?', answer: 'Discuss your organizational tools, time management strategies, and how you communicate with stakeholders.', category: 'Behavioral', difficulty: 'Medium' },
-        { question: `What do you know about ${companyName}'s recent projects or industry position?`, answer: 'Show you have done your research by mentioning a recent product launch, news article, or company value.', category: 'Company-Specific', difficulty: 'Easy' },
-        { question: 'Can you explain a complex technical concept to a non-technical person?', answer: 'Provide a brief, clear example using an analogy, demonstrating your communication skills.', category: 'Technical', difficulty: 'Hard' },
-        { question: 'How do you stay updated with the latest trends and technologies in your field?', answer: 'Mention specific blogs, courses, communities, or personal projects you engage with.', category: 'Behavioral', difficulty: 'Easy' },
-        { question: 'Tell me about a time you made a mistake at work. How did you handle it?', answer: 'Own the mistake, explain what you did to fix it immediately, and what you learned to prevent it in the future.', category: 'Behavioral', difficulty: 'Hard' }
-      ];
+      console.warn('Gemini API Error for Interview QA:', aiError.message);
+      throw aiError;
     }
 
     const finalQuestions = Array.isArray(questions) ? questions.slice(0, 10) : [];
-    if (finalQuestions.length > 0) aiCache.set(cacheKey, finalQuestions);
 
     // ✅ LOG SUCCESSFUL USAGE
     const responseTime = Date.now() - startTime;
