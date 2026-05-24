@@ -6,9 +6,20 @@ import jwt from 'jsonwebtoken';
 let io;
 
 export const initSocket = (server) => {
+  const getAllowedOrigins = () => {
+    const defaultOrigins = ['http://localhost:5173', 'http://localhost:5174'];
+    const rawUrl = process.env.FRONTEND_URL;
+    if (!rawUrl) return defaultOrigins;
+    
+    const parsedOrigins = rawUrl.split(',').map(url => {
+      return url.trim().replace(/['"]/g, '').replace(/\/$/, '');
+    });
+    return [...parsedOrigins, ...defaultOrigins];
+  };
+
   io = new Server(server, {
     cors: {
-      origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+      origin: getAllowedOrigins(),
       methods: ['GET', 'POST'],
       credentials: true
     },

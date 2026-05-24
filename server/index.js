@@ -50,8 +50,19 @@ app.use((req, res, next) => {
 });
 
 // ✅ CORS & Body Parsing (production-ready)
+const getAllowedOrigins = () => {
+  const defaultOrigins = ['http://localhost:5173', 'http://localhost:5174'];
+  const rawUrl = process.env.FRONTEND_URL;
+  if (!rawUrl) return defaultOrigins;
+  
+  const parsedOrigins = rawUrl.split(',').map(url => {
+    return url.trim().replace(/['"]/g, '').replace(/\/$/, '');
+  });
+  return [...parsedOrigins, ...defaultOrigins];
+};
+
 app.use(cors({ 
-  origin: process.env.FRONTEND_URL?.split(',') || 'http://localhost:5173', // Support multiple origins
+  origin: getAllowedOrigins(),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
