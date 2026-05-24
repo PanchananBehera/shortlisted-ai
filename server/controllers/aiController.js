@@ -1,30 +1,32 @@
-// server/controllers/aiController.js - FULLY UPDATED WITH USAGE TRACKING
-
-// ✅ 1. IMPORTS
+// server/controllers/aiController.js - PRODUCTION READY (All Functions Implemented)
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 import PDFDocument from 'pdfkit';
-const pdfParse = require('pdf-parse');
+// const pdfParse = require('pdf-parse'); // ✅ Deprecated in favor of Gemini native PDF processing
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import AnalysisHistory from '../models/AnalysisHistory.js';
-import AIUsageLog from '../models/AIUsageLog.js'; // ✅ Usage tracking model
-import { logAIUsage } from '../utils/aiUsageLogger.js'; // ✅ Logger utility
+import { logAIUsage } from '../utils/aiUsageLogger.js';
 
-// ✅ 2. RATE LIMITING
+// ✅ RATE LIMITING
 const rateLimitStore = new Map();
-const checkRateLimit = (userId, limit = 20, windowMs = 60000) => {
+const checkRateLimit = (userId, limit = parseInt(process.env.AI_RATE_LIMIT || '10'), windowMs = parseInt(process.env.AI_RATE_LIMIT_WINDOW || '60000')) => {
   const now = Date.now();
   const userRequests = rateLimitStore.get(userId) || [];
   const recentRequests = userRequests.filter(timestamp => now - timestamp < windowMs);
-  if (recentRequests.length >= limit) return false;
+  
+  if (recentRequests.length >= limit) {
+    const oldest = Math.min(...recentRequests);
+    const waitTime = Math.ceil((oldest + windowMs - now) / 1000);
+    return { allowed: false, waitTime };
+  }
   recentRequests.push(now);
   rateLimitStore.set(userId, recentRequests);
-  return true;
+  return { allowed: true };
 };
 
-// ✅ API Key Rotation & Fallback to bypass Rate Limits
+// ✅ API Key Rotation & Fallback with Exponential Backoff
 let currentKeyIndex = 0;
-const generateContentWithRetry = async (prompt, modelName = 'gemini-2.0-flash', retries = 0) => {
+const generateContentWithRetry = async (prompt, modelName = 'gemini-flash-lite-latest', retries = 0) => {
   const keys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k);
   if (keys.length === 0) throw new Error("GEMINI_API_KEY is not set in .env");
   
@@ -36,16 +38,29 @@ const generateContentWithRetry = async (prompt, modelName = 'gemini-2.0-flash', 
     const result = await model.generateContent(prompt);
     return await result.response;
   } catch (error) {
-    if ((error.message?.includes('429') || error.message?.includes('quota') || error.message?.includes('exceeded')) && keys.length > 1 && retries < keys.length) {
-      console.warn(`API Key ${currentKeyIndex + 1} hit rate limit. Rotating to next key...`);
+    const isRateLimit = error.message?.includes('429') || 
+                       error.message?.includes('quota') || 
+                       error.message?.includes('exceeded') || 
+                       error.message?.includes('RESOURCE_EXHAUSTED');
+    
+    if (isRateLimit && keys.length > 1 && retries < keys.length) {
+      console.warn(`API Key ${currentKeyIndex + 1} hit rate limit. Rotating...`);
       currentKeyIndex = (currentKeyIndex + 1) % keys.length;
       return generateContentWithRetry(prompt, modelName, retries + 1);
     }
+    
+    if (isRateLimit && retries < 2) {
+      const delay = Math.pow(2, retries) * 1000;
+      console.log(`Rate limited. Waiting ${delay}ms before retry ${retries + 1}...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return generateContentWithRetry(prompt, modelName, retries + 1);
+    }
+    
     throw error;
   }
 };
 
-// ✅ 2.1 CACHING
+// ✅ CACHING
 const aiCache = new Map();
 setInterval(() => aiCache.clear(), 30 * 60 * 1000);
 const getCacheKey = (type, data) => {
@@ -53,66 +68,98 @@ const getCacheKey = (type, data) => {
   return `${type}:${JSON.stringify(sorted)}`;
 };
 
-// ✅ 3. CONTROLLER FUNCTIONS
-
+// ✅ analyzeResume
 export const analyzeResume = async (req, res) => {
-  const startTime = Date.now(); // ✅ Track start time
+  const startTime = Date.now();
   
   try {
     const { targetRole = 'Software Engineer', jobDescription = '' } = req.body || {};
     if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
     if (req.file.size > 5 * 1024 * 1024) return res.status(413).json({ success: false, error: 'File too large' });
 
-    let extractedText;
-    try {
-      const ext = req.file.originalname ? req.file.originalname.split('.').pop().toLowerCase() : '';
-      if (req.file.mimetype === 'application/pdf' || ext === 'pdf') {
-        const pdfParseData = await pdfParse(req.file.buffer);
-        extractedText = pdfParseData.text;
-      } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === 'docx') {
-        const mammoth = require('mammoth');
-        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
-        extractedText = result.value;
-      } else if (req.file.mimetype === 'application/msword' || ext === 'doc') {
-        const WordExtractor = require('word-extractor');
-        const extractor = new WordExtractor();
-        const extracted = await extractor.extract(req.file.buffer);
-        extractedText = extracted.getBody();
-      } else {
-        extractedText = req.file.buffer.toString('utf-8');
-      }
-      if (!extractedText || extractedText.trim().length === 0) {
-        return res.status(400).json({ success: false, error: 'Could not extract text' });
-      }
-    } catch (parseError) {
-      console.error('FILE PARSING ERROR:', parseError);
-      return res.status(500).json({ success: false, error: `Failed to parse file: ${parseError.message}` });
-    }
-
     let analysis;
-    try {
-      const prompt = `You are an expert ATS optimizer. Analyze resume for role: "${targetRole}". ${jobDescription ? `Job Description:\n${jobDescription}\n` : ''}
+    const ext = req.file.originalname ? req.file.originalname.split('.').pop().toLowerCase() : '';
+    const isPDF = req.file.mimetype === 'application/pdf' || ext === 'pdf';
+
+    if (isPDF) {
+      // ✅ Use Gemini's highly robust native PDF processing (completely avoids buggy pdf-parse loops and hangs!)
+      try {
+        const base64Data = req.file.buffer.toString('base64');
+        const pdfPart = {
+          inlineData: {
+            data: base64Data,
+            mimeType: 'application/pdf'
+          }
+        };
+
+        const prompt = `You are an expert ATS optimizer. Analyze the attached resume PDF for role: "${targetRole}". ${jobDescription ? `Job Description:\n${jobDescription}\n` : ''}
+Return ONLY valid JSON: { "score": number, "atsScore": number, "keywordScore": number, "formattingScore": number, "overallScore": number, "strengths": [], "weaknesses": [], "missingSkills": [], "missingKeywords": [], "improvements": [], "detectedSkills": [], "experienceLevel": "string", "correctedResume": "string", "roadmap": [], "issues": [], "atsCheck": { "overallScore": number, "keywordMatch": { "matchedKeywords": [], "missingKeywords": [] }, "formatting": { "hasTables": boolean, "hasGraphics": boolean, "hasColumns": boolean, "usesStandardHeadings": boolean, "fontCompatibility": "string", "issues": [] }, "recommendations": [] } }`;
+
+        const response = await generateContentWithRetry([prompt, pdfPart], 'gemini-flash-lite-latest');
+        const text = response.text();
+        
+        try {
+          const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+          analysis = JSON.parse(cleanText);
+        } catch (parseErr) {
+          const match = text.match(/\{[\s\S]*\}/);
+          if (match) {
+            analysis = JSON.parse(match[0]);
+          } else {
+            throw new Error('Invalid JSON format from AI');
+          }
+        }
+      } catch (aiError) {
+        console.error('Gemini API Error for Resume PDF Analysis:', aiError.message);
+        throw aiError;
+      }
+    } else {
+      // ✅ Fallback to text extraction for DOCX, DOC, and TXT files
+      let extractedText;
+      try {
+        if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === 'docx') {
+          const mammoth = require('mammoth');
+          const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+          extractedText = result.value;
+        } else if (req.file.mimetype === 'application/msword' || ext === 'doc') {
+          const WordExtractor = require('word-extractor');
+          const extractor = new WordExtractor();
+          const extracted = await extractor.extract(req.file.buffer);
+          extractedText = extracted.getBody();
+        } else {
+          extractedText = req.file.buffer.toString('utf-8');
+        }
+        if (!extractedText || extractedText.trim().length === 0) {
+          return res.status(400).json({ success: false, error: 'Could not extract text from file' });
+        }
+      } catch (parseError) {
+        console.error('FILE PARSING ERROR:', parseError);
+        return res.status(500).json({ success: false, error: `Failed to parse file: ${parseError.message}` });
+      }
+
+      try {
+        const prompt = `You are an expert ATS optimizer. Analyze resume for role: "${targetRole}". ${jobDescription ? `Job Description:\n${jobDescription}\n` : ''}
 Return ONLY valid JSON: { "score": number, "atsScore": number, "keywordScore": number, "formattingScore": number, "overallScore": number, "strengths": [], "weaknesses": [], "missingSkills": [], "missingKeywords": [], "improvements": [], "detectedSkills": [], "experienceLevel": "string", "correctedResume": "string", "roadmap": [], "issues": [], "atsCheck": { "overallScore": number, "keywordMatch": { "matchedKeywords": [], "missingKeywords": [] }, "formatting": { "hasTables": boolean, "hasGraphics": boolean, "hasColumns": boolean, "usesStandardHeadings": boolean, "fontCompatibility": "string", "issues": [] }, "recommendations": [] } }
 Resume Text: ${extractedText.substring(0, 4000)}`;
-      
-      const response = await generateContentWithRetry(prompt, 'gemini-2.0-flash');
-      const text = response.text();
-      
-      try {
-        const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-        analysis = JSON.parse(cleanText);
-      } catch (parseErr) {
-        // Fallback: extract JSON object via regex if there's extra conversational text
-        const match = text.match(/\{[\s\S]*\}/);
-        if (match) {
-          analysis = JSON.parse(match[0]);
-        } else {
-          throw new Error('Invalid JSON format from AI');
+        
+        const response = await generateContentWithRetry(prompt, 'gemini-flash-lite-latest');
+        const text = response.text();
+        
+        try {
+          const cleanText = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+          analysis = JSON.parse(cleanText);
+        } catch (parseErr) {
+          const match = text.match(/\{[\s\S]*\}/);
+          if (match) {
+            analysis = JSON.parse(match[0]);
+          } else {
+            throw new Error('Invalid JSON format from AI');
+          }
         }
+      } catch (aiError) {
+        console.warn('Gemini API Error for Resume Text Analysis:', aiError.message);
+        throw aiError;
       }
-    } catch (aiError) {
-      console.warn('Gemini API Error for Resume Analysis:', aiError.message);
-      throw aiError;
     }
 
     const overallScore = analysis.score || analysis.overallScore || Math.round((analysis.atsScore + analysis.keywordScore + analysis.formattingScore) / 3);
@@ -122,58 +169,104 @@ Resume Text: ${extractedText.substring(0, 4000)}`;
     const userId = req.user?._id || req.user?.id;
     if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
+    // ✅ Sanitize roadmap array to match Mongoose schema (prevents validation CastErrors if Gemini returns flat strings)
+    if (Array.isArray(analysis.roadmap)) {
+      analysis.roadmap = analysis.roadmap.map(item => {
+        if (typeof item === 'string') {
+          return {
+            skill: item.split(':')[0]?.replace(/\*\*|\*/g, '').trim() || 'General Development',
+            priority: 'Medium',
+            actionStep: item.trim(),
+            timeEstimate: 'Flexible',
+            resources: []
+          };
+        }
+        return {
+          skill: item.skill || 'General Development',
+          priority: item.priority || 'Medium',
+          actionStep: item.actionStep || '',
+          timeEstimate: item.timeEstimate || 'Flexible',
+          resources: Array.isArray(item.resources) ? item.resources : []
+        };
+      });
+    } else {
+      analysis.roadmap = [];
+    }
+
+    // ✅ Sanitize issues array to match Mongoose schema (prevents validation CastErrors if Gemini returns flat strings)
+    if (Array.isArray(analysis.issues)) {
+      analysis.issues = analysis.issues.map(item => {
+        if (typeof item === 'string') {
+          return {
+            type: 'Resume Formatting',
+            description: item.trim(),
+            severity: 'Medium'
+          };
+        }
+        return {
+          type: item.type || 'Resume Formatting',
+          description: item.description || '',
+          severity: item.severity || 'Medium'
+        };
+      });
+    } else {
+      analysis.issues = [];
+    }
+
     const historyEntry = await AnalysisHistory.create({
       userId, resumeName: req.file.originalname, uploadedAt: new Date(), analysis: { ...analysis }
     });
 
-    // ✅ LOG SUCCESSFUL USAGE - Matches your AIUsageLog schema exactly
     const responseTime = Date.now() - startTime;
     await logAIUsage({
       userId,
-      userEmail: req.user?.email || 'unknown',
+      userEmail: req.user.email,
       featureUsed: 'resume-analysis',
+      companyName: targetRole,
       jobRole: targetRole,
       success: true,
-      tokenCount: Math.round(extractedText?.length / 4), // ✅ Matches your schema field name
       responseTime,
-      modelUsed: 'gemini-2.0-flash', // ✅ Added per your schema
-      ipAddress: req?.ip || req?.connection?.remoteAddress, // ✅ Added per your schema
-      userAgent: req?.get('User-Agent'), // ✅ Added per your schema
-      req // ✅ Pass req for IP/userAgent extraction in logger
+      req
     });
 
+    const historyObj = historyEntry.toObject();
     res.json({
       success: true, message: 'Resume analyzed successfully!',
-      ...historyEntry.analysis.toObject(),
-      data: { analysisId: historyEntry._id, resumeName: req.file.originalname, fileSize: (req.file.size / 1024).toFixed(2) + ' KB', analysis: historyEntry.analysis }
+      ...historyObj.analysis,
+      data: { analysisId: historyEntry._id, resumeName: req.file.originalname, fileSize: (req.file.size / 1024).toFixed(2) + ' KB', analysis: historyObj.analysis }
     });
 
   } catch (error) {
     console.error('Resume Analysis Error:', error);
     
-    // ✅ LOG FAILED USAGE
     const responseTime = Date.now() - startTime;
     await logAIUsage({
-      userId: req.user?._id || req.user?.id,
-      userEmail: req.user?.email || 'unknown',
+      userId: req.user?._id || req.user?.id || 'anonymous',
+      userEmail: req.user?.email || 'anonymous@example.com',
       featureUsed: 'resume-analysis',
+      companyName: targetRole || 'Unknown',
+      jobRole: targetRole || 'Unknown',
       success: false,
       errorMessage: error.message,
       responseTime,
-      modelUsed: 'gemini-2.0-flash',
-      ipAddress: req?.ip || req?.connection?.remoteAddress,
-      userAgent: req?.get('User-Agent'),
       req
     });
+    
     if (error.message?.includes('429') || error.message?.includes('quota') || error.message?.includes('exceeded')) {
-      return res.status(429).json({ success: false, error: 'AI quota exceeded. Please wait 1 minute.' });
+      return res.status(429).json({ 
+        success: false, 
+        error: 'AI quota exceeded. Please wait 60 seconds.',
+        retryAfter: 60,
+        code: 'AI_QUOTA_EXCEEDED'
+      });
     }
     res.status(500).json({ success: false, error: 'Failed to analyze resume' });
   }
 };
 
+// ✅ generateCoverLetter
 export const generateCoverLetter = async (req, res) => {
-  const startTime = Date.now(); // ✅ Track start time
+  const startTime = Date.now();
   
   try {
     const { companyName, position, jobRole, jobDescription, profile } = req.body;
@@ -181,11 +274,19 @@ export const generateCoverLetter = async (req, res) => {
     const role = position || jobRole;
 
     if (!companyName || !role) return res.status(400).json({ success: false, error: 'Company name and position are required' });
-    if (!checkRateLimit(userId, 20, 60000)) return res.status(429).json({ success: false, error: 'Please wait 30 seconds before generating again.' });
+    
+    const rateCheck = checkRateLimit(userId, 10, 60000);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({ 
+        success: false, 
+        error: `Too many requests. Please wait ${rateCheck.waitTime} seconds before trying again.`,
+        retryAfter: rateCheck.waitTime,
+        code: 'RATE_LIMITED'
+      });
+    }
 
     const profileText = profile ? `Applicant: ${profile.fullName || ''} | Title: ${profile.jobTitle || ''} | Skills: ${Array.isArray(profile.skills) ? profile.skills.join(', ') : profile.skills || ''}` : '';
 
-    // Random seed + varied style instruction so each generation is unique
     const randomSeed = Math.random().toString(36).substring(2, 10);
     const styles = [
       'confident and achievement-focused',
@@ -197,32 +298,24 @@ export const generateCoverLetter = async (req, res) => {
     const chosenStyle = styles[Math.floor(Math.random() * styles.length)];
     const prompt = `Write a UNIQUE professional cover letter for ${role} at ${companyName}. Style: ${chosenStyle}. ${jobDescription ? 'Job Description: ' + jobDescription : ''} ${profileText ? 'About the applicant: ' + profileText : ''} Keep it 300-400 words, plain text only. Make it feel personal and varied — avoid generic phrases. Ref: ${randomSeed}`;
 
-    // ✅ Never cache cover letters — always generate fresh unique content
-    // (caching was causing repeated identical letters on regenerate)
-
     let coverLetter;
     try {
-      const response = await generateContentWithRetry(prompt, 'gemini-2.0-flash');
+      const response = await generateContentWithRetry(prompt, 'gemini-flash-lite-latest');
       coverLetter = response.text().trim();
     } catch (aiError) {
       console.warn('Gemini API Error for Cover Letter:', aiError.message);
       throw aiError;
     }
 
-    // ✅ LOG SUCCESSFUL USAGE
     const responseTime = Date.now() - startTime;
     await logAIUsage({
       userId,
-      userEmail: req.user?.email || 'unknown',
+      userEmail: req.user.email,
       featureUsed: 'cover-letter',
       companyName,
       jobRole: role,
       success: true,
-      tokenCount: Math.round(coverLetter?.length / 4),
       responseTime,
-      modelUsed: 'gemini-2.0-flash',
-      ipAddress: req?.ip || req?.connection?.remoteAddress,
-      userAgent: req?.get('User-Agent'),
       req
     });
 
@@ -231,25 +324,26 @@ export const generateCoverLetter = async (req, res) => {
   } catch (error) {
     console.error('Cover Letter Error:', error);
     
-    // ✅ LOG FAILED USAGE
     const responseTime = Date.now() - startTime;
     await logAIUsage({
-      userId: req.user?._id || req.user?.id,
-      userEmail: req.user?.email || 'unknown',
+      userId: req.user?._id || req.user?.id || 'anonymous',
+      userEmail: req.user?.email || 'anonymous@example.com',
       featureUsed: 'cover-letter',
-      companyName: req.body.companyName,
-      jobRole: req.body.position || req.body.jobRole,
+      companyName: companyName || 'Unknown',
+      jobRole: role || 'Unknown',
       success: false,
       errorMessage: error.message,
       responseTime,
-      modelUsed: 'gemini-2.0-flash',
-      ipAddress: req?.ip || req?.connection?.remoteAddress,
-      userAgent: req?.get('User-Agent'),
       req
     });
     
     if (error.message?.includes('429') || error.message?.includes('quota')) {
-      return res.status(429).json({ success: false, error: 'AI quota exceeded. Please wait 1 minute.' });
+      return res.status(429).json({ 
+        success: false, 
+        error: 'AI quota exceeded. Please wait 60 seconds.',
+        retryAfter: 60,
+        code: 'AI_QUOTA_EXCEEDED'
+      });
     }
     if (error.message?.includes('API key') || error.message?.includes('authentication')) {
       return res.status(500).json({ success: false, error: 'Gemini API key invalid. Please check your configuration.' });
@@ -258,30 +352,40 @@ export const generateCoverLetter = async (req, res) => {
   }
 };
 
+// ✅ generateInterviewQA
 export const generateInterviewQA = async (req, res) => {
-  const startTime = Date.now(); // ✅ Track start time
+  const startTime = Date.now();
   
   try {
-    const { companyName, position, jobRole, jobDescription, profile } = req.body;
+    const { companyName, position, jobRole, jobDescription, profile, existingQuestions = [] } = req.body;
     const userId = req.user?._id || req.user?.id;
     const role = position || jobRole;
 
     if (!companyName || !role) return res.status(400).json({ success: false, error: 'Company name and position are required' });
-    if (!checkRateLimit(userId, 20, 60000)) return res.status(429).json({ success: false, error: 'Please wait 30 seconds before generating again.' });
+    
+    const rateCheck = checkRateLimit(userId, 10, 60000);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({ 
+        success: false, 
+        error: `Too many requests. Please wait ${rateCheck.waitTime} seconds before trying again.`,
+        retryAfter: rateCheck.waitTime,
+        code: 'RATE_LIMITED'
+      });
+    }
 
-    // Add random seed + timestamp so Gemini always generates fresh unique questions
+    const avoidPrompt = Array.isArray(existingQuestions) && existingQuestions.length > 0
+      ? `\nCRITICAL: Do NOT generate any of these existing questions (ensure all generated questions are completely fresh):\n${existingQuestions.map(q => `- ${q}`).join('\n')}`
+      : '';
+
     const randomSeed = Math.random().toString(36).substring(2, 8);
-    const prompt = `Generate 10 UNIQUE and VARIED interview questions with detailed answers for the ${role} position at ${companyName}. ${jobDescription ? 'Job Description: ' + jobDescription : ''}
+    const prompt = `Generate 10 UNIQUE and VARIED interview questions with detailed answers for the ${role} position at ${companyName}. ${jobDescription ? 'Job Description: ' + jobDescription : ''}${avoidPrompt}
 IMPORTANT: Make questions fresh and different each time. Vary the difficulty and categories. Seed: ${randomSeed}.
 Return ONLY valid JSON array: [{"question":"text","answer":"text","category":"Technical|Behavioral|HR|System Design|Company-Specific","difficulty":"Easy|Medium|Hard"}]`;
 
-    // ✅ Never cache interview questions — always generate fresh ones for "New Questions"
-    // (cover-letter caching is fine since it rarely needs regeneration)
-
     let questions;
     try {
-      const response = await generateContentWithRetry(prompt, 'gemini-2.0-flash');
-      const text = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+      const response = await generateContentWithRetry(prompt, 'gemini-flash-lite-latest');
+      const text = response.text().replace(/```json/gi, '').replace(/```/g, '').trim();
       
       try {
         questions = JSON.parse(text);
@@ -297,20 +401,15 @@ Return ONLY valid JSON array: [{"question":"text","answer":"text","category":"Te
 
     const finalQuestions = Array.isArray(questions) ? questions.slice(0, 10) : [];
 
-    // ✅ LOG SUCCESSFUL USAGE
     const responseTime = Date.now() - startTime;
     await logAIUsage({
       userId,
-      userEmail: req.user?.email || 'unknown',
+      userEmail: req.user.email,
       featureUsed: 'interview-qa',
       companyName,
       jobRole: role,
       success: true,
-      tokenCount: finalQuestions?.length * 50,
       responseTime,
-      modelUsed: 'gemini-2.0-flash',
-      ipAddress: req?.ip || req?.connection?.remoteAddress,
-      userAgent: req?.get('User-Agent'),
       req
     });
 
@@ -319,25 +418,26 @@ Return ONLY valid JSON array: [{"question":"text","answer":"text","category":"Te
   } catch (error) {
     console.error('Interview QA Error:', error);
     
-    // ✅ LOG FAILED USAGE
     const responseTime = Date.now() - startTime;
     await logAIUsage({
-      userId: req.user?._id || req.user?.id,
-      userEmail: req.user?.email || 'unknown',
+      userId: req.user?._id || req.user?.id || 'anonymous',
+      userEmail: req.user?.email || 'anonymous@example.com',
       featureUsed: 'interview-qa',
-      companyName: req.body.companyName,
-      jobRole: req.body.position || req.body.jobRole,
+      companyName: companyName || 'Unknown',
+      jobRole: role || 'Unknown',
       success: false,
       errorMessage: error.message,
       responseTime,
-      modelUsed: 'gemini-2.0-flash',
-      ipAddress: req?.ip || req?.connection?.remoteAddress,
-      userAgent: req?.get('User-Agent'),
       req
     });
     
     if (error.message?.includes('429') || error.message?.includes('quota')) {
-      return res.status(429).json({ success: false, error: 'AI quota exceeded. Please wait 1 minute.' });
+      return res.status(429).json({ 
+        success: false, 
+        error: 'AI quota exceeded. Please wait 60 seconds.',
+        retryAfter: 60,
+        code: 'AI_QUOTA_EXCEEDED'
+      });
     }
     if (error.message?.includes('API key') || error.message?.includes('authentication')) {
       return res.status(500).json({ success: false, error: 'Gemini API key invalid. Please check configuration.' });
@@ -346,67 +446,183 @@ Return ONLY valid JSON array: [{"question":"text","answer":"text","category":"Te
   }
 };
 
+// ✅ getAnalysisHistory - Fetch user's analysis history
 export const getAnalysisHistory = async (req, res) => {
   try {
     const userId = req.user._id || req.user.id;
-    const history = await AnalysisHistory.find({ userId }).sort({ uploadedAt: -1 }).limit(20);
+    
+    const history = await AnalysisHistory.find({ userId })
+      .sort({ uploadedAt: -1 })
+      .limit(20);
+    
+    // Flatten analysis object for easier frontend consumption
     const flattenedHistory = history.map(item => {
       const obj = item.toObject();
       const analysisObj = obj.analysis || {};
       delete obj.analysis;
-      return { ...obj, ...analysisObj, score: analysisObj.score || analysisObj.overallScore || 0, atsCheck: analysisObj.atsCheck || null, roadmap: analysisObj.roadmap || [] };
+      return { 
+        ...obj, 
+        ...analysisObj, 
+        score: analysisObj.score || analysisObj.overallScore || 0, 
+        atsCheck: analysisObj.atsCheck || null, 
+        roadmap: analysisObj.roadmap || [] 
+      };
     });
-    res.json({ success: true, count: history.length, history: flattenedHistory });
+    
+    res.json({ 
+      success: true, 
+      count: flattenedHistory.length, 
+      history: flattenedHistory 
+    });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch history' });
+    console.error('Get history error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch analysis history' });
   }
 };
 
+// ✅ getAnalysisDetail - Fetch single analysis by ID
 export const getAnalysisDetail = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user._id || req.user.id;
+    
     const analysis = await AnalysisHistory.findOne({ _id: id, userId });
-    if (!analysis) return res.status(404).json({ success: false, error: 'Not found' });
+    
+    if (!analysis) {
+      return res.status(404).json({ success: false, error: 'Analysis not found' });
+    }
+    
+    // Flatten analysis object for easier frontend consumption
     const obj = analysis.toObject();
     const analysisObj = obj.analysis || {};
     delete obj.analysis;
-    const flattenedAnalysis = { ...obj, ...analysisObj, score: analysisObj.score || analysisObj.overallScore || 0, atsCheck: analysisObj.atsCheck || null, roadmap: analysisObj.roadmap || [] };
+    
+    const flattenedAnalysis = { 
+      ...obj, 
+      ...analysisObj, 
+      score: analysisObj.score || analysisObj.overallScore || 0, 
+      atsCheck: analysisObj.atsCheck || null, 
+      roadmap: analysisObj.roadmap || [] 
+    };
+    
     res.json({ success: true, analysis: flattenedAnalysis });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to fetch detail' });
+    console.error('Get analysis detail error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch analysis detail' });
   }
 };
 
+// ✅ deleteAnalysisHistory - Delete analysis by ID (FIXES THE ERROR!)
 export const deleteAnalysisHistory = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user._id || req.user.id;
+    
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+    
     const deleted = await AnalysisHistory.findOneAndDelete({ _id: id, userId });
-    if (!deleted) return res.status(404).json({ success: false, error: 'Not found' });
-    res.json({ success: true, message: 'Deleted successfully' });
+    
+    if (!deleted) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Analysis not found or you do not have permission to delete it' 
+      });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Analysis deleted successfully',
+      deletedId: id 
+    });
+    
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to delete' });
+    console.error('Delete analysis error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Failed to delete analysis' 
+    });
   }
 };
 
+// ✅ emailResume - Email optimized resume to user
 export const emailResume = async (req, res) => {
   try {
-    const { email, targetRole, correctedResume, score } = req.body;
-    if (!email || !correctedResume) return res.status(400).json({ success: false, error: 'Email and resume required' });
+    const { email, targetRole, correctedResume, score, atsScore, strengths, atsCheck, roadmap } = req.body;
+    
+    if (!email || !correctedResume) {
+      return res.status(400).json({ success: false, error: 'Email and resume content are required' });
+    }
+    
+    // ✅ Use nodemailer to send email
     const nodemailer = require('nodemailer');
-    const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS } });
-    await transporter.sendMail({ from: process.env.EMAIL_USER, to: email, subject: `Your Optimized Resume - ${targetRole}`, text: `Overall Score: ${score}/100\n\n${correctedResume}` });
+    
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+    
+    // ✅ Create email content
+    const emailContent = `
+Hi there,
+
+Here's your optimized resume for the ${targetRole} position, generated by Shortlisted AI.
+
+📊 Overall Score: ${score}/100
+🎯 ATS Score: ${atsScore || 'N/A'}/100
+
+💪 Strengths:
+${strengths?.map(s => `• ${s}`).join('\n') || '• None identified'}
+
+🔍 ATS Compatibility Report:
+${atsCheck?.recommendations?.map(r => `• ${r}`).join('\n') || '• No specific recommendations'}
+
+🗺️ Your 90-Day Growth Roadmap:
+${roadmap?.slice(0, 3).map(step => `• ${step.skill}: ${step.actionStep}`).join('\n') || '• No roadmap available'}
+
+---
+✨ Your Optimized Resume:
+${correctedResume}
+
+---
+This resume was optimized using AI-powered ATS analysis. 
+For best results, save as PDF before submitting to employers.
+
+Generated by Shortlisted AI • https://shortlisted.ai
+    `;
+    
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: `Your Optimized Resume - ${targetRole} • Shortlisted AI`,
+      text: emailContent,
+      // Optional: Add HTML version
+      html: `<pre style="font-family: sans-serif; line-height: 1.5;">${emailContent.replace(/\n/g, '<br>')}</pre>`
+    });
+    
     res.json({ success: true, message: 'Email sent successfully!' });
+    
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Failed to send email' });
+    console.error('Email error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Failed to send email. Please check your email configuration.' 
+    });
   }
 };
 
+// ✅ exportATSReport - Generate and download ATS Report PDF
 export const exportATSReport = async (req, res) => {
   try {
     const { targetRole, score, atsCheck, roadmap, strengths, weaknesses } = req.body;
-    if (!targetRole || !atsCheck) return res.status(400).json({ success: false, message: 'Missing required data for PDF generation.' });
+    
+    if (!targetRole || !atsCheck) {
+      return res.status(400).json({ success: false, message: 'Missing required data for PDF generation.' });
+    }
 
     const doc = new PDFDocument({ margin: 50, size: 'A4', layout: 'portrait', bufferPages: true });
     const buffers = [];
@@ -418,12 +634,23 @@ export const exportATSReport = async (req, res) => {
       res.send(pdfData);
     });
 
-    const colors = { primary: '#16a34a', secondary: '#0f172a', accent: '#3b82f6', warning: '#f59e0b', error: '#ef4444', success: '#10b981', dark: '#1e293b', light: '#f8fafc', gray: '#64748b' };
+    const colors = { 
+      primary: '#16a34a', 
+      secondary: '#0f172a', 
+      accent: '#3b82f6', 
+      warning: '#f59e0b', 
+      error: '#ef4444', 
+      success: '#10b981', 
+      dark: '#1e293b', 
+      light: '#f8fafc', 
+      gray: '#64748b' 
+    };
 
     // HEADER
     const headerHeight = 100;
     const gradient = doc.linearGradient(0, 0, doc.page.width, headerHeight);
-    gradient.stop(0, colors.secondary); gradient.stop(1, colors.dark);
+    gradient.stop(0, colors.secondary); 
+    gradient.stop(1, colors.dark);
     doc.rect(0, 0, doc.page.width, headerHeight).fill(gradient);
     doc.fontSize(32).font('Helvetica-Bold').fillColor('#ffffff').text('Shortlisted AI', 50, 30);
     doc.fontSize(16).font('Helvetica').fillColor('#94a3b8').text('ATS Compatibility Report', 50, 60);
@@ -540,7 +767,7 @@ export const exportATSReport = async (req, res) => {
   }
 };
 
-// ✅ 4. EXPORTS
+// ✅ EXPORTS - ALL FUNCTIONS INCLUDED
 export default {
   analyzeResume,
   generateCoverLetter,

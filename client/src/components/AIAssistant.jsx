@@ -1,5 +1,5 @@
-// client/src/components/AIAssistant.jsx - Button UI Restored
-import React, { useState } from 'react';
+// client/src/components/AIAssistant.jsx - FULLY UPDATED WITH CLICK DEBOUNCING & 429 HANDLING
+import React, { useState, useRef } from 'react';
 import api from '../utils/axios';
 
 const AIAssistant = ({ application }) => {
@@ -9,8 +9,20 @@ const AIAssistant = ({ application }) => {
   const [interviewQuestions, setInterviewQuestions] = useState([]);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  
+  // ✅ Prevent rapid duplicate clicks
+  const lastClickTime = useRef(0);
+  const MIN_CLICK_INTERVAL = 1000; // 1 second minimum between clicks
 
   const generateCoverLetter = async () => {
+    // ✅ Click debouncing
+    const now = Date.now();
+    if (now - lastClickTime.current < MIN_CLICK_INTERVAL) {
+      console.log('Click ignored - too soon');
+      return;
+    }
+    lastClickTime.current = now;
+
     if (!application) {
       setError('Please select an application first');
       return;
@@ -45,13 +57,31 @@ const AIAssistant = ({ application }) => {
       }
     } catch (err) {
       console.error('Cover Letter Error:', err.response?.data || err.message);
-      setError(err.response?.data?.error || 'Failed to generate cover letter. Please try again.');
+      
+      // ✅ Handle 429 Rate Limit specifically
+      if (err.response?.status === 429) {
+        const retryAfter = err.response?.data?.retryAfter || 60;
+        const message = err.response?.data?.error || 'Too many requests';
+        setError(`⏱️ ${message} (wait ~${retryAfter}s)`);
+      } else if (err.response?.data?.code === 'AI_QUOTA_EXCEEDED') {
+        setError('🤖 AI service is busy. Please wait 60 seconds and try again.');
+      } else {
+        setError(err.response?.data?.error || 'Failed to generate. Please try again.');
+      }
     } finally {
       setLoadingCoverLetter(false);
     }
   };
 
   const generateInterviewQuestions = async () => {
+    // ✅ Click debouncing
+    const now = Date.now();
+    if (now - lastClickTime.current < MIN_CLICK_INTERVAL) {
+      console.log('Click ignored - too soon');
+      return;
+    }
+    lastClickTime.current = now;
+
     if (!application) {
       setError('Please select an application first');
       return;
@@ -86,7 +116,17 @@ const AIAssistant = ({ application }) => {
       }
     } catch (err) {
       console.error('Interview Questions Error:', err.response?.data || err.message);
-      setError(err.response?.data?.error || 'Failed to generate interview questions. Please try again.');
+      
+      // ✅ Handle 429 Rate Limit specifically
+      if (err.response?.status === 429) {
+        const retryAfter = err.response?.data?.retryAfter || 60;
+        const message = err.response?.data?.error || 'Too many requests';
+        setError(`⏱️ ${message} (wait ~${retryAfter}s)`);
+      } else if (err.response?.data?.code === 'AI_QUOTA_EXCEEDED') {
+        setError('🤖 AI service is busy. Please wait 60 seconds and try again.');
+      } else {
+        setError(err.response?.data?.error || 'Failed to generate. Please try again.');
+      }
     } finally {
       setLoadingQuestions(false);
     }
@@ -139,7 +179,6 @@ const AIAssistant = ({ application }) => {
             {(application?.companyName || application?.company || 'the company')}
           </p>
           
-          {/* ✅ UPDATED BUTTON STYLE */}
           <button
             onClick={generateCoverLetter}
             disabled={loadingCoverLetter || loadingQuestions}
@@ -185,7 +224,6 @@ const AIAssistant = ({ application }) => {
             10 unique questions with answers — regenerate for fresh ones each time!
           </p>
           
-          {/* ✅ UPDATED BUTTON STYLE */}
           <button
             onClick={generateInterviewQuestions}
             disabled={loadingQuestions || loadingCoverLetter}

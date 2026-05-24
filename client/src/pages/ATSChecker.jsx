@@ -55,7 +55,11 @@ const ATSChecker = () => {
       formData.append('targetRole', targetRole);
       formData.append('jobDescription', jobDescription);
 
-      const res = await api.post('/ai/analyze-resume', formData);
+      const res = await api.post('/ai/analyze-resume', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
 
       if (res.data.atsCheck) {
         setResult(res.data.atsCheck);

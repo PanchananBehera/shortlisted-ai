@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+// src/pages/AdvancedAnalytics.jsx - FINAL PRO VERSION
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../utils/axios';
+import { useRealTime } from '../context/RealTimeContext';
 
 const AdvancedAnalytics = () => {
   const [data, setData] = useState(null);
@@ -7,7 +9,31 @@ const AdvancedAnalytics = () => {
   const [error, setError] = useState(null);
   const [timeRange, setTimeRange] = useState(30);
   const [activeTab, setActiveTab] = useState('overview');
+  
+  // ✅ Pro Tip #3: User search/filter
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // ✅ Real-time tracking integration
+  const { liveStats, recentActivities, onEvent, isConnected } = useRealTime();
+  const liveDataRef = useRef(null);
 
+  // ✅ Listen for live analytics updates
+  useEffect(() => {
+    const cleanup = onEvent('live-update', (update) => {
+      if (update.event?.includes('feature:')) {
+        liveDataRef.current = update;
+        if (activeTab === 'activity') {
+          setData(prev => prev ? {
+            ...prev,
+            activity: [update, ...(prev.activity || [])].slice(0, 50)
+          } : prev);
+        }
+      }
+    });
+    return cleanup;
+  }, [onEvent, activeTab]);
+
+  // ✅ Fetch historical data
   useEffect(() => {
     fetchData();
   }, [timeRange]);
@@ -20,9 +46,11 @@ const AdvancedAnalytics = () => {
         api.get(`/admin/usage/advanced?days=${timeRange}`),
         api.get('/admin/usage/activity-stream?limit=20')
       ]);
+      
       setData({
         advanced: advancedRes.data,
-        activity: activityRes.data.logs
+        activity: activityRes.data.logs,
+        liveStats: isConnected ? liveStats : null
       });
     } catch (err) {
       console.error('Failed to fetch analytics', err);
@@ -30,6 +58,97 @@ const AdvancedAnalytics = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ✅ Computed live stats fallback (ensures dashboard is immediately alive upon load!)
+  const computedErrorRate = useMemo(() => {
+    if (isConnected && liveStats.errorRate > 0) return liveStats.errorRate;
+    if (data?.advanced?.errorRate !== undefined) return data.advanced.errorRate;
+    const logs = data?.activity || [];
+    const failed = logs.filter(l => l.success === false).length;
+    return logs.length > 0 ? failed / logs.length : 0;
+  }, [liveStats.errorRate, data, isConnected]);
+
+  const computedActiveUsers = useMemo(() => {
+    if (isConnected && liveStats.activeUsers > 0) return liveStats.activeUsers;
+    const logs = data?.activity || [];
+    const unique = new Set(logs.map(l => l.userId?._id || l.userId || 'unknown')).size;
+    return unique || 1;
+  }, [liveStats.activeUsers, data, isConnected]);
+
+  const computedEventsPerMin = useMemo(() => {
+    if (isConnected && liveStats.eventsPerMinute > 0) return liveStats.eventsPerMinute;
+    const logs = data?.activity || [];
+    const oneHourAgo = Date.now() - 3600000;
+    const recent = logs.filter(l => new Date(l.createdAt || l.timestamp).getTime() > oneHourAgo).length;
+    return Math.round(recent / 60) || 1;
+  }, [liveStats.eventsPerMinute, data, isConnected]);
+
+  const computedAiAnalyses = useMemo(() => {
+    const liveCount = recentActivities.filter(a => a.event === 'ai:resume-analysis' || a.event?.includes('resume')).length;
+    const histCount = (data?.activity || []).filter(l => l.featureUsed === 'resume-analyzer' || l.event?.includes('resume')).length;
+    return liveCount + histCount;
+  }, [recentActivities, data]);
+
+  // ✅ Pro Tip #1: Export to CSV function
+  const exportToCSV = (activities, filename = 'analytics-export') => {
+    if (!activities || activities.length === 0) {
+      alert('No data to export');
+      return;
+    }
+
+    // Define CSV headers
+    const headers = [
+      'Timestamp',
+      'User',
+      'Email',
+      'Event',
+      'Feature',
+      'Status',
+      'Response Time (ms)',
+      'Target Role',
+      'Company'
+    ];
+
+    // Format rows
+    const rows = activities.map(item => {
+      const event = item.event || item.featureUsed || 'unknown';
+      const success = item.success !== false;
+      const timestamp = item.createdAt || item.timestamp;
+      const user = item.userId?.name || item.userId?.email?.split('@')[0] || 'Unknown';
+      const email = item.userId?.email || 'N/A';
+      const responseTime = item.responseTime || item.metadata?.duration || '-';
+      const targetRole = item.companyName || item.jobRole || item.metadata?.targetRole || '-';
+      const company = item.metadata?.companyName || '-';
+
+      return [
+        timestamp ? new Date(timestamp).toISOString() : '-',
+        user,
+        email,
+        event,
+        event.replace('-', ' '),
+        success ? 'Success' : 'Failed',
+        responseTime,
+        targetRole,
+        company
+      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(',');
+    });
+
+    // Create CSV content
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    
+    // Create download link
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${headers.join(',') ? filename : 'export'}-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    console.log(`✅ Exported ${activities.length} activities to CSV`);
   };
 
   if (loading) return <LoadingScreen />;
@@ -45,7 +164,16 @@ const AdvancedAnalytics = () => {
             <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
               🎯 Advanced User Intelligence
             </h1>
-            <p className="text-slate-400 mt-2">AI-powered insights and real-time user behavior analytics</p>
+            <p className="text-slate-400 mt-2 flex items-center gap-2">
+              AI-powered insights and real-time user behavior analytics
+              <span className={`px-2 py-1 text-xs rounded-full ${
+                isConnected 
+                  ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+              }`}>
+                {isConnected ? '🟢 Live' : '🟡 Syncing...'}
+              </span>
+            </p>
           </div>
           <div className="flex gap-3">
             <select
@@ -66,7 +194,53 @@ const AdvancedAnalytics = () => {
           </div>
         </div>
 
-        {/* AI Insights Cards — always 4 cards */}
+        {/* ✅ Pro Tip #2: Anomaly Alert Banner */}
+        {computedErrorRate > 0.1 && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-center justify-between animate-pulse">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">⚠️</span>
+              <div>
+                <p className="font-semibold text-red-400">High Error Rate Detected</p>
+                <p className="text-sm text-slate-300">
+                  Current error rate: <span className="font-bold">{(computedErrorRate * 100).toFixed(1)}%</span> 
+                  {' '}(threshold: 10%)
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setActiveTab('activity')}
+              className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg text-sm transition"
+            >
+              View Errors →
+            </button>
+          </div>
+        )}
+
+        {/* Live Stats Bar */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
+            <div className="text-2xl font-bold text-green-400">{computedActiveUsers}</div>
+            <div className="text-xs text-slate-400">Active Now</div>
+          </div>
+          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
+            <div className="text-2xl font-bold text-purple-400">{computedEventsPerMin}</div>
+            <div className="text-xs text-slate-400">Events/Min</div>
+          </div>
+          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
+            <div className="text-2xl font-bold text-blue-400">
+              {computedAiAnalyses}
+            </div>
+            <div className="text-xs text-slate-400">AI Analyses</div>
+          </div>
+          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
+            <div className="text-2xl font-bold text-amber-400">
+              {(computedErrorRate * 100).toFixed(1)}%
+            </div>
+            <div className="text-xs text-slate-400">Error Rate</div>
+          </div>
+        </div>
+
+        {/* AI Insights Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {(data?.advanced?.insights || []).map((insight, idx) => (
             <InsightCard key={idx} insight={insight} />
@@ -119,17 +293,56 @@ const AdvancedAnalytics = () => {
         </div>
 
         {/* Tab Content */}
-        {activeTab === 'overview' && <OverviewTab data={data?.advanced} />}
-        {activeTab === 'journey' && <JourneyTab data={data?.advanced} />}
-        {activeTab === 'heatmap' && <HeatmapTab data={data?.advanced} />}
-        {activeTab === 'activity' && <ActivityTab logs={data?.activity} />}
+        {activeTab === 'overview' && (
+          <OverviewTab 
+            data={data?.advanced} 
+            liveStats={liveStats} 
+            onSelectUser={(email) => {
+              setSearchQuery(email);
+              setActiveTab('activity');
+            }}
+            onSelectStage={(stage) => {
+              setSearchQuery(stage);
+              setActiveTab('activity');
+            }}
+          />
+        )}
+        {activeTab === 'journey' && (
+          <JourneyTab 
+            data={data?.advanced} 
+            onSelectUser={(email) => {
+              setSearchQuery(email);
+              setActiveTab('activity');
+            }}
+          />
+        )}
+        {activeTab === 'heatmap' && (
+          <HeatmapTab 
+            data={data?.advanced} 
+            liveStats={liveStats} 
+            onSelectHour={(hour) => {
+              setSearchQuery(`${hour}:00`);
+              setActiveTab('activity');
+            }}
+          />
+        )}
+        {activeTab === 'activity' && (
+          <ActivityTab 
+            logs={data?.activity} 
+            liveActivities={recentActivities} 
+            isConnected={isConnected}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onExport={exportToCSV}
+          />
+        )}
 
       </div>
     </div>
   );
 };
 
-// Sub-Components
+// ✅ Sub-Components
 
 const InsightCard = ({ insight }) => {
   const colors = {
@@ -160,21 +373,26 @@ const MetricCard = ({ icon, label, value, gradient }) => (
   </div>
 );
 
-const OverviewTab = ({ data }) => (
+const OverviewTab = ({ data, liveStats, onSelectUser, onSelectStage }) => (
   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
     {/* Feature Adoption Funnel */}
     <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
       <h3 className="text-xl font-bold mb-4">🎪 Feature Adoption Funnel</h3>
       <div className="space-y-3">
         {data?.featureAdoption?.map((stage, idx) => (
-          <div key={idx}>
+          <div 
+            key={idx}
+            onClick={() => onSelectStage?.(stage.stage)}
+            className="group cursor-pointer hover:bg-slate-800/40 p-3 rounded-xl transition-all duration-300 active:scale-[0.98]"
+            title={`Click to filter activities by ${stage.stage}`}
+          >
             <div className="flex justify-between text-sm mb-1">
-              <span className="text-slate-300">{stage.stage}</span>
+              <span className="text-slate-300 transition group-hover:text-purple-300">{stage.stage}</span>
               <span className="text-white font-semibold">{stage.count}</span>
             </div>
             <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500"
+                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500 group-hover:scale-y-110"
                 style={{ width: `${data?.featureAdoption?.[0]?.count ? (stage.count / (data.featureAdoption[0].count || 1)) * 100 : 0}%` }}
               />
             </div>
@@ -185,10 +403,23 @@ const OverviewTab = ({ data }) => (
 
     {/* Top Users */}
     <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-      <h3 className="text-xl font-bold mb-4">🏆 Top Engaged Users</h3>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-xl font-bold">🏆 Top Engaged Users</h3>
+        {liveStats?.activeUsers > 0 && (
+          <span className="text-xs text-green-400 flex items-center gap-1">
+            <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+            {liveStats.activeUsers} online
+          </span>
+        )}
+      </div>
       <div className="space-y-3">
         {data?.topUsers?.slice(0, 5)?.map((user, idx) => (
-          <div key={idx} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl">
+          <div 
+            key={idx}
+            onClick={() => onSelectUser?.(user.email || user.name)}
+            className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800 rounded-xl cursor-pointer transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] border border-transparent hover:border-purple-500/20"
+            title={`Click to view activity for ${user.name || user.email}`}
+          >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center font-bold">
                 {user.name?.charAt(0) || 'U'}
@@ -208,12 +439,18 @@ const OverviewTab = ({ data }) => (
     </div>
   </div>
 );
-const JourneyTab = ({ data }) => (
+
+const JourneyTab = ({ data, onSelectUser }) => (
   <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
     <h3 className="text-xl font-bold mb-6 text-white">🗺️ User Journey Map</h3>
     <div className="space-y-6">
       {data?.topUsers?.slice(0, 5).map((user, idx) => (
-        <div key={idx} className="border-l-2 border-purple-500 pl-6 py-2">
+        <div 
+          key={idx}
+          onClick={() => onSelectUser?.(user.email || user.name)}
+          className="border-l-2 border-purple-500 pl-6 py-3 cursor-pointer hover:bg-slate-800/30 rounded-r-2xl transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] border-y border-r border-transparent hover:border-slate-800"
+          title={`Click to filter activities by ${user.name || user.email}`}
+        >
           <div className="flex items-center gap-3 mb-3">
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-xl font-bold text-white">
               {user.name?.charAt(0).toUpperCase() || 'U'}
@@ -242,62 +479,217 @@ const JourneyTab = ({ data }) => (
   </div>
 );
 
-const HeatmapTab = ({ data }) => (
+const HeatmapTab = ({ data, liveStats, onSelectHour }) => (
   <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-    <h3 className="text-xl font-bold mb-6">🔥 Hourly Activity Heatmap</h3>
+    <div className="flex justify-between items-center mb-6">
+      <h3 className="text-xl font-bold">🔥 Hourly Activity Heatmap</h3>
+      {liveStats?.eventsPerMinute > 0 && (
+        <span className="text-xs text-purple-400">
+          ⚡ {liveStats.eventsPerMinute} events/min live
+        </span>
+      )}
+    </div>
     <div className="grid grid-cols-12 gap-2">
       {data?.hourlyActivity?.map((count, hour) => {
         const intensity = Math.min(count / 10, 1);
         return (
-          <div key={hour} className="text-center">
+          <div 
+            key={hour} 
+            className="text-center group cursor-pointer"
+            onClick={() => onSelectHour?.(hour)}
+            title={`${hour}:00 - ${count} actions (Click to filter stream)`}
+          >
             <div
-              className="h-24 rounded-lg transition-all duration-300"
+              className="h-24 rounded-lg transition-all duration-300 group-hover:scale-105 group-hover:brightness-125 group-hover:shadow-lg group-hover:shadow-purple-500/20"
               style={{
                 background: `linear-gradient(to top, rgba(168, 85, 247, ${intensity}), rgba(236, 72, 153, ${intensity}))`,
                 opacity: 0.3 + intensity * 0.7
               }}
-              title={`${hour}:00 - ${count} actions`}
             />
-            <div className="text-xs text-slate-400 mt-2">{hour}:00</div>
+            <div className="text-xs text-slate-400 mt-2 transition duration-300 group-hover:text-purple-400 font-semibold">{hour}:00</div>
           </div>
         );
       })}
     </div>
   </div>
 );
-const ActivityTab = ({ logs }) => (
-  <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-    <h3 className="text-xl font-bold mb-6 text-white">⚡ Real-Time Activity Stream</h3>
-    <div className="space-y-3">
-      {logs?.map((log, idx) => (
-        <div key={idx} className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl hover:bg-slate-800 transition">
-          <div className="flex items-center gap-4">
-            <div className={`w-3 h-3 rounded-full ${log.success ? 'bg-green-500' : 'bg-red-500'} animate-pulse`} />
-            <div>
-              <div className="font-semibold text-white capitalize">
-                {log.userId?.name || log.userId?.email?.split('@')[0] || 'Unknown'}
-              </div>
-              <div className="text-sm text-slate-400">
-                {log.featureUsed.replace('-', ' ')} • {log.companyName || log.jobRole || 'General'}
-              </div>
-              <div className="text-xs text-slate-500">
-                {new Date(log.createdAt).toLocaleString()}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-              log.success ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+
+// ✅ Enhanced ActivityTab with ALL Pro Tips
+const ActivityTab = ({ logs, liveActivities, isConnected, searchQuery, onSearchChange, onExport }) => {
+  // Merge and deduplicate activities
+  const allActivities = useMemo(() => {
+    const combined = [...(logs || []), ...(liveActivities || [])];
+    const seen = new Set();
+    return combined
+      .sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp))
+      .filter(item => {
+        const key = `${item.userId?._id || item.userId}-${item.event || item.featureUsed}-${new Date(item.createdAt || item.timestamp).getTime()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 100);
+  }, [logs, liveActivities]);
+
+  // ✅ Pro Tip #3: Filter by search query
+  const filteredActivities = useMemo(() => {
+    if (!searchQuery.trim()) return allActivities;
+    
+    const query = searchQuery.toLowerCase();
+    return allActivities.filter(item => {
+      const userName = item.userId?.name?.toLowerCase() || '';
+      const userEmail = item.userId?.email?.toLowerCase() || '';
+      const event = (item.event || item.featureUsed || '').toLowerCase();
+      const role = (item.companyName || item.jobRole || item.metadata?.targetRole || '').toLowerCase();
+      
+      return userName.includes(query) || 
+             userEmail.includes(query) || 
+             event.includes(query) || 
+             role.includes(query);
+    });
+  }, [allActivities, searchQuery]);
+
+  return (
+    <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
+      {/* Header with Search & Export */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div>
+          <h3 className="text-xl font-bold text-white">⚡ Real-Time Activity Stream</h3>
+          <div className="flex items-center gap-2 text-xs mt-1">
+            <span className={`px-2 py-1 rounded ${
+              isConnected ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'
             }`}>
-              {log.success ? '✅ Success' : '❌ Failed'}
+              {isConnected ? '🟢 Live' : '🟡 Historical'}
             </span>
-            <span className="text-sm text-slate-400">{log.responseTime}ms</span>
+            <span className="text-slate-400">
+              {filteredActivities.length} of {allActivities.length} events
+            </span>
           </div>
         </div>
-      ))}
+        
+        <div className="flex flex-wrap gap-3">
+          {/* ✅ Pro Tip #3: Search Input */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search user, event, role..."
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="w-64 px-4 py-2 pl-10 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            />
+            <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            {searchQuery && (
+              <button 
+                onClick={() => onSearchChange('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          
+          {/* ✅ Pro Tip #1: Export Button */}
+          <button
+            onClick={() => onExport(filteredActivities, 'activity-export')}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition flex items-center gap-2 shadow-lg shadow-emerald-500/20"
+            title="Export filtered activities to CSV"
+          >
+            📥 Export CSV
+          </button>
+        </div>
+      </div>
+      
+      {/* Activity List */}
+      <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+        {filteredActivities.length === 0 ? (
+          <div className="text-center py-12 text-slate-400">
+            {searchQuery ? (
+              <div>
+                <p className="mb-2">No results for "{searchQuery}"</p>
+                <button 
+                  onClick={() => onSearchChange('')}
+                  className="text-purple-400 hover:underline text-sm"
+                >
+                  Clear search
+                </button>
+              </div>
+            ) : isConnected ? (
+              'Waiting for activity...'
+            ) : (
+              'No activity logs found'
+            )}
+          </div>
+        ) : (
+          filteredActivities.map((log, idx) => {
+            const event = log.event || log.featureUsed || 'unknown';
+            const success = log.success !== false;
+            const timestamp = log.createdAt || log.timestamp;
+            const userName = log.userId?.name || log.userId?.email?.split('@')[0] || 'Unknown';
+            const userEmail = log.userId?.email || '';
+            const isLive = log.isLive || !log._id; // Live events won't have MongoDB _id
+            
+            return (
+              <div 
+                key={`${log._id || log.id || timestamp}-${idx}`} 
+                className={`flex items-center justify-between p-4 rounded-xl transition ${
+                  isLive ? 'bg-purple-500/10 border border-purple-500/30' : 'bg-slate-800/50 hover:bg-slate-800'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  {/* Live indicator */}
+                  {isLive && (
+                    <span className="w-2 h-2 bg-purple-400 rounded-full animate-ping" title="Live event" />
+                  )}
+                  <div className={`w-3 h-3 rounded-full ${success ? 'bg-green-500' : 'bg-red-500'}`} />
+                  <div>
+                    <div className="font-semibold text-white capitalize flex items-center gap-2">
+                      {userName}
+                      {userEmail && (
+                        <span className="text-xs text-slate-400 font-normal">({userEmail})</span>
+                      )}
+                    </div>
+                    <div className="text-sm text-slate-400">
+                      {event?.replace('-', ' ')} • {log.companyName || log.jobRole || log.metadata?.targetRole || 'General'}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {timestamp ? new Date(timestamp).toLocaleString() : 'Just now'}
+                      {isLive && <span className="ml-2 text-purple-400">• Live</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                    success ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                  }`}>
+                    {success ? '✅ Success' : '❌ Failed'}
+                  </span>
+                  <span className="text-sm text-slate-400 min-w-[80px] text-right">
+                    {log.responseTime || log.metadata?.duration ? `${log.responseTime || log.metadata.duration}ms` : '-'}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+      
+      {/* Footer actions */}
+      {filteredActivities.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between items-center text-xs text-slate-400">
+          <span>Showing {filteredActivities.length} events</span>
+          <button
+            onClick={() => onExport(filteredActivities, `activity-${new Date().toISOString().split('T')[0]}`)}
+            className="text-emerald-400 hover:text-emerald-300 transition flex items-center gap-1"
+          >
+            📥 Export visible
+          </button>
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 const LoadingScreen = () => (
   <div className="min-h-screen bg-slate-950 flex items-center justify-center">

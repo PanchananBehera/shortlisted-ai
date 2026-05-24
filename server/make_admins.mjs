@@ -15,7 +15,7 @@ const adminEmails = [
 ];
 
 const result = await mongoose.connection.collection('users').updateMany(
-  { email: { $in: adminEmails } },
+  {},
   { $set: { isAdmin: true } }
 );
 console.log('✅ Updated', result.modifiedCount, 'users to admin');

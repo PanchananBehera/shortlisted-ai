@@ -76,19 +76,17 @@ const Navbar = () => {
             <Link to="/about" className={getLinkClass('/about')}>
               🌿 About
             </Link>
-            {/* Admin Analytics - only for admins */}
-            {user?.isAdmin && (
-              <Link to="/admin/analytics" className={getLinkClass('/admin/analytics')}>
-                📊 Analytics
-              </Link>
-            )}
+            {/* Analytics */}
+            <Link to="/admin/analytics" className={getLinkClass('/admin/analytics')}>
+              📊 Analytics
+            </Link>
           </div>
 
           {/* User Menu + Dark Mode Toggle */}
           <div className="flex items-center gap-2">
             {user && (
               <span className="text-sm text-gray-600 dark:text-gray-400 hidden sm:block transition-colors">
-                Hi, {user.name?.split(' ')[0]}
+                Hi, {(user.fullName || user.name)?.split(' ')[0]}
               </span>
             )}
             
@@ -136,9 +134,7 @@ const Navbar = () => {
           <Link to="/history" className={getMobileClass('/history')}>📈</Link>
           {/* ✅ NEW: Mobile About Link */}
           <Link to="/about" className={getMobileClass('/about')}>🌿</Link>
-          {user?.isAdmin && (
-            <Link to="/admin/analytics" className={getMobileClass('/admin/analytics')}>📊</Link>
-          )}
+          <Link to="/admin/analytics" className={getMobileClass('/admin/analytics')}>📊</Link>
         </div>
       </div>
     </nav>

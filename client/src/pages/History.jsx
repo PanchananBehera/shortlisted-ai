@@ -78,7 +78,8 @@ const History = () => {
     const firstScore = sorted[0]?.score || 0;
     const lastScore = latest?.score || 0;
     const improvement = lastScore - firstScore;
-    const improvementPercent = firstScore > 0 ? Math.round((improvement / firstScore) * 100) : 0;
+    const rawPercent = firstScore > 0 ? Math.round((improvement / firstScore) * 100) : 0;
+    const improvementPercent = Math.min(Math.max(rawPercent, 0), 100);
 
     setAnalytics({
       lineData,
@@ -90,6 +91,8 @@ const History = () => {
         improvement,
         improvementPercent,
         bestScore: Math.max(...data.map(item => item.score)),
+        firstScore,
+        lastScore,
       },
     });
   };
@@ -183,15 +186,19 @@ const History = () => {
           )}
 
           {/* ✅ Improvement Badge */}
-          {analytics?.stats?.improvementPercent > 0 && (
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 p-4 rounded-2xl border border-green-200 dark:border-green-800 flex items-center gap-3">
+          {analytics?.stats && (
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 p-6 rounded-2xl border border-green-200/50 dark:border-green-800/30 flex items-start gap-4">
               <span className="text-3xl">🎉</span>
-              <div>
-                <p className="font-semibold text-green-700 dark:text-green-300">
-                  You've improved by {analytics.stats.improvementPercent}%!
-                </p>
-                <p className="text-sm text-green-600 dark:text-green-400">
-                  Keep optimizing — you're on a great trajectory! 🚀
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-green-700 dark:text-green-300 mb-1">
+                  {analytics.stats.improvement > 0 
+                    ? `Improved by ${analytics.stats.improvement} points (+${analytics.stats.improvementPercent}%)!`
+                    : 'On your optimization journey'}
+                </h3>
+                <p className="text-sm text-green-600/90 dark:text-green-400/90">
+                  {analytics.stats.improvement > 0 
+                    ? `Your score increased from ${analytics.stats.firstScore} to ${analytics.stats.lastScore}. Keep it up! 🚀`
+                    : `Your average score is ${analytics.stats.avgScore}. Keep optimizing to see improvement!`}
                 </p>
               </div>
             </div>

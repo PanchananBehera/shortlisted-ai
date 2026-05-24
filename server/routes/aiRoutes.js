@@ -15,10 +15,10 @@ import {
 
 const router = express.Router();
 
-// ✅ Configure multer for file uploads (memory storage for pdf-parse)
+// ✅ Configure multer for file uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = [
       'application/pdf', 
@@ -38,52 +38,20 @@ const upload = multer({
   }
 });
 
-// ==========================================
-// ✅ AI ASSISTANT ROUTES (Cover Letter & Interview QA)
-// ==========================================
-
-// Generate Cover Letter
-// Frontend calls: POST /api/ai/cover-letter
+// ✅ AI ASSISTANT ROUTES
 router.post('/cover-letter', protect, generateCoverLetter);
-
-// Generate Interview Questions & Answers
-// Frontend calls: POST /api/ai/interview-qa
 router.post('/interview-qa', protect, generateInterviewQA);
 
-// ==========================================
 // ✅ RESUME ANALYSIS ROUTES
-// ==========================================
-
-// Analyze Resume (PDF/DOCX/TXT)
-// Frontend calls: POST /api/ai/analyze-resume
 router.post('/analyze-resume', protect, upload.single('resume'), analyzeResume);
 
-// ==========================================
 // ✅ HISTORY ROUTES
-// ==========================================
-
-// Get all analysis history for user
-// Frontend calls: GET /api/ai/history
 router.get('/history', protect, getAnalysisHistory);
-
-// Get single analysis by ID
-// Frontend calls: GET /api/ai/history/:id
 router.get('/history/:id', protect, getAnalysisDetail);
-
-// Delete analysis by ID
-// Frontend calls: DELETE /api/ai/history/:id
 router.delete('/history/:id', protect, deleteAnalysisHistory);
 
-// ==========================================
 // ✅ EMAIL & EXPORT ROUTES
-// ==========================================
-
-// Email optimized resume to user
-// Frontend calls: POST /api/ai/email-resume
 router.post('/email-resume', protect, emailResume);
-
-// Export ATS Report as PDF
-// Frontend calls: POST /api/ai/export-ats-report
 router.post('/export-ats-report', protect, exportATSReport);
 
 export default router;

@@ -1,4 +1,4 @@
-// src/pages/Login.jsx - FIXED
+// src/pages/Login.jsx
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -27,13 +27,11 @@ const Login = () => {
         password: formData.password 
       });
       
-      // ✅ Backend returns: { success: true, _id, fullName, email, token }
       const { token, ...userData } = res.data;
       login(token, userData);
       navigate('/dashboard');
       
     } catch (err) {
-      // ✅ Check BOTH error and message fields for compatibility
       const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Login failed. Please try again.';
       setError(errorMsg);
     } finally {
@@ -44,10 +42,8 @@ const Login = () => {
   return (
     <div className="min-h-screen bg-[#fafaf8] dark:bg-slate-950 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 transition-colors duration-300">
       <div className="max-w-md w-full">
-        {/* Card Container */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm p-8 sm:p-10 border border-gray-200/50 dark:border-slate-800 transition-colors">
           
-          {/* Header */}
           <div className="text-center mb-8">
             <Link to="/" className="inline-flex items-center justify-center mb-4 group">
               <div className="w-14 h-14 bg-green-500 dark:bg-green-600 rounded-xl flex items-center justify-center shadow-md group-hover:scale-105 transition-all">
@@ -58,17 +54,13 @@ const Login = () => {
             <p className="text-gray-600 dark:text-gray-400 transition-colors">Sign in to continue your placement journey</p>
           </div>
 
-          {/* Error Message */}
           {error && (
             <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl text-rose-700 dark:text-rose-300 text-sm text-center transition-colors">
               {error}
             </div>
           )}
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
-            
-            {/* Email Field */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Email Address
@@ -86,7 +78,6 @@ const Login = () => {
               />
             </div>
 
-            {/* Password Field */}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Password
@@ -104,7 +95,6 @@ const Login = () => {
               />
             </div>
 
-            {/* Remember Me & Forgot Password */}
             <div className="flex items-center justify-between">
               <label className="flex items-center cursor-pointer">
                 <input
@@ -118,7 +108,6 @@ const Login = () => {
               </a>
             </div>
 
-            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
@@ -138,7 +127,6 @@ const Login = () => {
             </button>
           </form>
 
-          {/* Divider & Register Link */}
           <div className="mt-8">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -156,7 +144,6 @@ const Login = () => {
           </div>
         </div>
 
-        {/* Footer Note */}
         <p className="mt-8 text-center text-sm text-gray-500 dark:text-gray-500 transition-colors">
           By signing in, you agree to our{' '}
           <a href="#" className="text-green-600 dark:text-green-400 hover:underline transition-colors">Terms</a>

@@ -76,8 +76,8 @@ router.get('/usage/my-activity', protect, async (req, res) => {
   }
 });
 
-// ✅ Get advanced analytics (admin only)
-router.get('/usage/advanced', protect, admin, async (req, res) => {
+// ✅ Get advanced analytics (accessible to all authenticated users)
+router.get('/usage/advanced', protect, async (req, res) => {
   try {
     const { days = 30 } = req.query;
     const startDate = new Date();
@@ -158,12 +158,12 @@ router.get('/usage/advanced', protect, admin, async (req, res) => {
       featureCounts[log.featureUsed] = (featureCounts[log.featureUsed] || 0) + 1;
     });
     const topFeature = Object.entries(featureCounts).sort((a, b) => b[1] - a[1])[0];
-    const errorRate = allLogs.length > 0 ? (allLogs.filter(l => !l.success).length / allLogs.length * 100) : 0;
+    const errorRate = allLogs.length > 0 ? (allLogs.filter(l => !l.success).length / allLogs.length) : 0;
     const powerUsers = Object.values(userEngagement).filter(u => u.engagementScore >= 70);
     const usersWithSingleFeature = Object.values(userEngagement).filter(u => u.featuresUsed.length === 1).length;
     const totalUsersEngaged = Object.keys(userEngagement).length;
 
-    // Card 1 — Most Popular Feature (always)
+    // Card 2 — Error Rate (always, with positive spin if low)
     const insights = [
       {
         type: 'success',
@@ -174,14 +174,13 @@ router.get('/usage/advanced', protect, admin, async (req, res) => {
         action: topFeature ? 'Consider promoting this feature on the homepage' : 'Encourage users to try Resume Analyzer first'
       },
 
-      // Card 2 — Error Rate (always, with positive spin if low)
       {
-        type: errorRate > 15 ? 'warning' : 'success',
-        title: errorRate > 15 ? '⚠️ High Error Rate Detected' : '✅ System Health: Excellent',
-        description: errorRate > 15
-          ? `${errorRate.toFixed(1)}% of AI requests are failing — needs attention`
-          : `Only ${errorRate.toFixed(1)}% error rate — all AI features running smoothly`,
-        action: errorRate > 15 ? 'Check backend logs and Gemini API quota' : 'Keep monitoring as user base grows'
+        type: errorRate > 0.15 ? 'warning' : 'success',
+        title: errorRate > 0.15 ? '⚠️ High Error Rate Detected' : '✅ System Health: Excellent',
+        description: errorRate > 0.15
+          ? `${(errorRate * 100).toFixed(1)}% of AI requests are failing — needs attention`
+          : `Only ${(errorRate * 100).toFixed(1)}% error rate — all AI features running smoothly`,
+        action: errorRate > 0.15 ? 'Check backend logs and Gemini API quota' : 'Keep monitoring as user base grows'
       },
 
       // Card 3 — Power Users (always)
@@ -224,7 +223,8 @@ router.get('/usage/advanced', protect, admin, async (req, res) => {
       featureAdoption,
       insights,
       totalUsers: totalUsersCount,
-      avgEngagementScore: Math.round(Object.values(userEngagement).reduce((sum, u) => sum + u.engagementScore, 0) / (totalUsersCount || 1)) || 0
+      avgEngagementScore: Math.round(Object.values(userEngagement).reduce((sum, u) => sum + u.engagementScore, 0) / (totalUsersCount || 1)) || 0,
+      errorRate
     });
   } catch (error) {
     console.error('Advanced analytics error:', error);
@@ -232,8 +232,8 @@ router.get('/usage/advanced', protect, admin, async (req, res) => {
   }
 });
 
-// ✅ Get real-time activity stream (admin only)
-router.get('/usage/activity-stream', protect, admin, async (req, res) => {
+// ✅ Get real-time activity stream (accessible to all authenticated users)
+router.get('/usage/activity-stream', protect, async (req, res) => {
   try {
     const { limit = 20 } = req.query;
     const logs = await AIUsageLog.find({})

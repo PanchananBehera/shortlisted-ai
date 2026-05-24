@@ -16,6 +16,7 @@ const COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#06b6d4'
 const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
+  const [errorObj, setErrorObj] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -28,6 +29,7 @@ const Dashboard = () => {
       setData(result);
     } catch (error) {
       console.error("Failed to load dashboard", error);
+      setErrorObj(error.message || String(error));
     } finally {
       setLoading(false);
     }
@@ -45,6 +47,7 @@ const Dashboard = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-gray-500 dark:text-gray-400">
         <p className="text-lg">⚠️ Could not load dashboard data.</p>
+        <p className="text-sm text-red-500">{errorObj}</p>
         <button
           onClick={fetchDashboardData}
           className="mt-4 px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-full font-medium transition"
@@ -243,7 +246,6 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-// In client/src/pages/Dashboard.jsx or new component
 const MyAIActivity = () => {
   const [activity, setActivity] = useState([]);
 
@@ -254,15 +256,15 @@ const MyAIActivity = () => {
   }, []);
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow">
-      <h3 className="font-semibold mb-4">🤖 Your AI Usage</h3>
+    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+      <h3 className="font-semibold mb-4 dark:text-white">🤖 Your AI Usage</h3>
       <ul className="space-y-3">
         {activity.map(log => (
           <li key={log._id} className="flex justify-between text-sm">
-            <span>
+            <span className="text-gray-900 dark:text-gray-200">
               {log.featureUsed === 'cover-letter' ? '✍️' : '🎯'} {log.companyName}
             </span>
-            <span className="text-gray-500">
+            <span className="text-gray-500 dark:text-gray-400">
               {new Date(log.createdAt).toLocaleDateString()}
             </span>
           </li>

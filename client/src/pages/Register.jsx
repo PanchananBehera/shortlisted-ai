@@ -1,4 +1,4 @@
-// src/pages/Register.jsx - FIXED
+// src/pages/Register.jsx
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -37,20 +37,17 @@ const Register = () => {
     setLoading(true);
 
     try {
-      // ✅ Send fullName to match backend User model
       const res = await api.post('/auth/register', {
-        fullName: formData.name,  // ✅ Map name → fullName
+        fullName: formData.name,
         email: formData.email,
         password: formData.password
       });
 
-      // ✅ Backend returns: { success: true, _id, fullName, email, token }
       const { token, ...userData } = res.data;
       login(token, userData);
       navigate('/dashboard');
       
     } catch (err) {
-      // ✅ Check BOTH error and message fields for compatibility
       const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Registration failed. Email may already be in use.';
       setError(errorMsg);
     } finally {
@@ -61,11 +58,8 @@ const Register = () => {
   return (
     <div className="min-h-screen bg-[#fafaf8] dark:bg-slate-950 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 transition-colors duration-300">
       <div className="max-w-md w-full">
-        
-        {/* Card Container */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm p-8 sm:p-10 border border-gray-200/50 dark:border-slate-800 transition-colors">
           
-          {/* Header */}
           <div className="text-center mb-8">
             <Link to="/" className="inline-flex items-center justify-center mb-4 group">
               <div className="w-14 h-14 bg-green-500 dark:bg-green-600 rounded-xl flex items-center justify-center shadow-md group-hover:scale-105 transition-all">
@@ -80,17 +74,13 @@ const Register = () => {
             </p>
           </div>
 
-          {/* Error Message */}
           {error && (
             <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl text-rose-700 dark:text-rose-300 text-sm text-center transition-colors">
               {error}
             </div>
           )}
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
-            
-            {/* Full Name Field */}
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Full Name
@@ -108,7 +98,6 @@ const Register = () => {
               />
             </div>
 
-            {/* Email Field */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Email Address
@@ -126,7 +115,6 @@ const Register = () => {
               />
             </div>
 
-            {/* Password Field */}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Password
@@ -146,7 +134,6 @@ const Register = () => {
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-500 transition-colors">Minimum 8 characters</p>
             </div>
 
-            {/* Confirm Password Field */}
             <div>
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Confirm Password
@@ -163,7 +150,6 @@ const Register = () => {
               />
             </div>
 
-            {/* Terms Checkbox */}
             <div className="flex items-start">
               <input
                 id="terms"
@@ -180,7 +166,6 @@ const Register = () => {
               </label>
             </div>
 
-            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
@@ -200,7 +185,6 @@ const Register = () => {
             </button>
           </form>
 
-          {/* Divider & Login Link */}
           <div className="mt-8">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -220,7 +204,6 @@ const Register = () => {
           </div>
         </div>
 
-        {/* Footer Note */}
         <p className="mt-8 text-center text-sm text-gray-500 dark:text-gray-500 transition-colors">
           Built for tech aspirants • Free forever • No credit card required
         </p>

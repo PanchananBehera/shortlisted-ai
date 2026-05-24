@@ -396,9 +396,9 @@ const ApplicationDetail = () => {
           )}
 
           {/* AI Error */}
-          {error && aiResult === null && (
-            <div className="p-4 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-2xl text-rose-700 dark:text-rose-300 text-sm transition-colors">
-              {error}
+          {error && (
+            <div className="p-4 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-2xl text-rose-700 dark:text-rose-300 text-sm text-center transition-colors animate-fade-in">
+              ⚠️ {error}
             </div>
           )}
 

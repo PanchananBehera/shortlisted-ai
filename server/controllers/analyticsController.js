@@ -7,7 +7,6 @@ import mongoose from 'mongoose';
 export const getDashboardStats = async (req, res) => {
   try {
     const userId = req.user._id || req.user.id;
-    const userObjectId = new mongoose.Types.ObjectId(userId);
 
     // 1. Get Basic Counts
     const total = await Application.countDocuments({ userId });
@@ -26,7 +25,7 @@ export const getDashboardStats = async (req, res) => {
 
     // 2. Get Status Distribution (for Pie Chart)
     const statusData = await Application.aggregate([
-      { $match: { userId: userObjectId } },
+      { $match: { userId: new mongoose.Types.ObjectId(userId.toString()) } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
       { $sort: { count: -1 } }
     ]);
@@ -37,7 +36,7 @@ export const getDashboardStats = async (req, res) => {
 
     const activityData = await Application.aggregate([
       { $match: { 
-          userId: userObjectId,
+          userId: new mongoose.Types.ObjectId(userId.toString()),
           createdAt: { $gte: thirtyDaysAgo } 
       }},
       { $group: {
