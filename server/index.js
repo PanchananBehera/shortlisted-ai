@@ -1,4 +1,4 @@
-// server/index.js - PRODUCTION OPTIMIZED
+// server/index.js - FINAL PRODUCTION VERSION
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -35,14 +35,31 @@ initSocket(server);
 // ✅ Start background tracking service
 startTrackingService();
 
+// ✅ Helper: Get allowed CORS origins (handles comma-separated env var)
+const getAllowedOrigins = () => {
+  const defaultOrigins = ['http://localhost:5173', 'http://localhost:5174'];
+  const rawUrl = process.env.FRONTEND_URL;
+  
+  if (!rawUrl) return defaultOrigins;
+  
+  // Parse, clean, and deduplicate origins
+  const parsedOrigins = rawUrl
+    .split(',')
+    .map(url => url.trim().replace(/['"]/g, '').replace(/\/$/, ''))
+    .filter(url => url.length > 0);
+  
+  // Combine + remove duplicates
+  return [...new Set([...parsedOrigins, ...defaultOrigins])];
+};
+
 // ✅ Request Logging Middleware (production-friendly)
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
-    // Only log non-200 errors in production to reduce noise
-    if (process.env.NODE_ENV === 'production' && res.statusCode >= 400) {
-      console.log(`📡 [${new Date().toISOString()}] ${req.method} ${req.originalUrl || req.url} - ${res.statusCode} (${Date.now() - start}ms)`);
-    } else if (process.env.NODE_ENV !== 'production') {
+    const isProd = process.env.NODE_ENV === 'production';
+    const shouldLog = !isProd || res.statusCode >= 400;
+    
+    if (shouldLog) {
       console.log(`📡 [${new Date().toISOString()}] ${req.method} ${req.originalUrl || req.url} - ${res.statusCode} (${Date.now() - start}ms)`);
     }
   });
@@ -50,37 +67,28 @@ app.use((req, res, next) => {
 });
 
 // ✅ CORS & Body Parsing (production-ready)
-const getAllowedOrigins = () => {
-  const defaultOrigins = ['http://localhost:5173', 'http://localhost:5174'];
-  const rawUrl = process.env.FRONTEND_URL;
-  if (!rawUrl) return defaultOrigins;
-  
-  const parsedOrigins = rawUrl.split(',').map(url => {
-    return url.trim().replace(/['"]/g, '').replace(/\/$/, '');
-  });
-  return [...parsedOrigins, ...defaultOrigins];
-};
-
 app.use(cors({ 
   origin: getAllowedOrigins(),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 }));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// ✅ Security Headers (optional but recommended)
+// ✅ Security Headers (production only)
 if (process.env.NODE_ENV === 'production') {
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     next();
   });
 }
 
-// ✅ API Routes
+// ✅ API Routes (CORS must be BEFORE routes)
 app.use('/api/auth', authRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/applications', applicationRoutes);
@@ -96,7 +104,8 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     realtime: 'enabled',
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    version: process.env.npm_package_version || '1.0.0'
   });
 });
 
@@ -105,35 +114,51 @@ app.get('/', (req, res) => {
   res.json({ 
     message: 'Shortlisted AI API running ✅',
     features: ['auth', 'ai-assistant', 'resume-analyzer', 'real-time-tracking'],
-    docs: 'https://github.com/yourusername/shortlisted-ai'
+    docs: 'https://github.com/yourusername/shortlisted-ai',
+    health: '/api/health'
   });
 });
 
 // ✅ Global Error Handler (production-safe)
 app.use((err, req, res, next) => {
-  // Log full error in development, sanitized in production
-  if (process.env.NODE_ENV === 'development') {
-    console.error('Server Error:', err);
-  } else {
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  // Log appropriately
+  if (isProduction) {
     console.error('Server Error:', {
       message: err.message,
-      stack: err.stack?.split('\n')[0], // First line only
+      stack: err.stack?.split('\n')[0],
       url: req.url,
-      method: req.method
+      method: req.method,
+      userId: req.user?._id || 'anonymous'
     });
+  } else {
+    console.error('Server Error:', err);
   }
   
-  // Don't leak internal errors to client in production
-  const isProduction = process.env.NODE_ENV === 'production';
+  // Safe response
   res.status(500).json({ 
     success: false, 
-    error: isProduction ? 'Internal server error' : err.message 
+    error: isProduction ? 'Internal server error' : err.message,
+    ...(isProduction ? {} : { stack: err.stack })
   });
 });
 
 // ✅ 404 Handler
 app.use((req, res) => {
-  res.status(404).json({ success: false, error: 'Route not found' });
+  res.status(404).json({ 
+    success: false, 
+    error: 'Route not found',
+    availableRoutes: [
+      'GET /api/health',
+      'POST /api/auth/register',
+      'POST /api/auth/login',
+      'GET /api/auth/me',
+      'POST /api/ai/analyze-resume',
+      'POST /api/ai/cover-letter',
+      'POST /api/ai/interview-qa'
+    ]
+  });
 });
 
 // ✅ Start Server with HTTP (production config)
@@ -141,35 +166,57 @@ const startServer = async () => {
   try {
     await connectDB();
     
+    // ✅ Log allowed origins for debugging
+    console.log(`🔐 Allowed Origins: ${getAllowedOrigins().join(', ')}`);
+    
     // ✅ Render requires listening on 0.0.0.0
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`✅ Server running on port ${PORT}`);
       console.log(`🔌 Real-time tracking enabled (Socket.io)`);
-      console.log(`🌐 Frontend: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
-      console.log(`📊 Analytics: ${process.env.FRONTEND_URL || 'http://localhost:5173'}/analytics`);
+      console.log(`🌐 Frontend: ${getAllowedOrigins().filter(u => !u.includes('localhost')).join(', ') || 'http://localhost:5173'}`);
+      console.log(`📊 Analytics: /admin/analytics`);
       console.log(`🔐 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`📦 Version: ${process.env.npm_package_version || '1.0.0'}`);
     });
     
     // ✅ Graceful shutdown (critical for zero-downtime deploys)
-    process.on('SIGINT', async () => {
-      console.log('\n🛑 Shutting down gracefully...');
+    const gracefulShutdown = (signal) => {
+      console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
+      
       server.close(() => {
-        console.log('✅ Server closed');
+        console.log('✅ HTTP server closed');
+        
+        // Close database connections if needed
+        // mongoose.connection.close(() => {
+        //   console.log('✅ MongoDB connection closed');
+        // });
+        
+        console.log('✅ Shutdown complete');
         process.exit(0);
       });
+      
       // Force exit after 10 seconds if connections don't close
       setTimeout(() => {
         console.error('❌ Could not close connections in time, forcefully shutting down');
         process.exit(1);
       }, 10000);
+    };
+    
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    
+    // Handle uncaught exceptions
+    process.on('uncaughtException', (err) => {
+      console.error('Uncaught Exception:', err);
+      gracefulShutdown('uncaughtException');
     });
     
-    process.on('SIGTERM', async () => {
-      console.log('\n🛑 Received SIGTERM, shutting down gracefully...');
-      server.close(() => {
-        console.log('✅ Server closed');
-        process.exit(0);
-      });
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+      // Don't exit on unhandled rejections in production (let app continue)
+      if (process.env.NODE_ENV !== 'production') {
+        gracefulShutdown('unhandledRejection');
+      }
     });
     
   } catch (error) {
@@ -178,4 +225,5 @@ const startServer = async () => {
   }
 };
 
+// ✅ Start the server
 startServer();
