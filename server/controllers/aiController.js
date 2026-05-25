@@ -1,8 +1,7 @@
-// server/controllers/aiController.js - PRODUCTION READY (All Functions Implemented)
+// server/controllers/aiController.js - FINAL PRODUCTION VERSION
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 import PDFDocument from 'pdfkit';
-// const pdfParse = require('pdf-parse'); // ✅ Deprecated in favor of Gemini native PDF processing
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import AnalysisHistory from '../models/AnalysisHistory.js';
 import { logAIUsage } from '../utils/aiUsageLogger.js';
@@ -27,7 +26,7 @@ const checkRateLimit = (userId, limit = parseInt(process.env.AI_RATE_LIMIT || '1
 
 // ✅ API Key Rotation & Fallback with Exponential Backoff
 let currentKeyIndex = 0;
-const generateContentWithRetry = async (prompt, modelName = 'gemini-flash-lite-latest', retries = 0) => {
+const generateContentWithRetry = async (prompt, modelName = 'gemini-1.5-flash', retries = 0) => {
   const keys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k);
   if (keys.length === 0) throw new Error("GEMINI_API_KEY is not set in .env");
   
@@ -83,7 +82,7 @@ export const analyzeResume = async (req, res) => {
     const isPDF = req.file.mimetype === 'application/pdf' || ext === 'pdf';
 
     if (isPDF) {
-      // ✅ Use Gemini's highly robust native PDF processing (completely avoids buggy pdf-parse loops and hangs!)
+      // ✅ Use Gemini's native PDF processing
       try {
         const base64Data = req.file.buffer.toString('base64');
         const pdfPart = {
@@ -96,7 +95,7 @@ export const analyzeResume = async (req, res) => {
         const prompt = `You are an expert ATS optimizer. Analyze the attached resume PDF for role: "${targetRole}". ${jobDescription ? `Job Description:\n${jobDescription}\n` : ''}
 Return ONLY valid JSON: { "score": number, "atsScore": number, "keywordScore": number, "formattingScore": number, "overallScore": number, "strengths": [], "weaknesses": [], "missingSkills": [], "missingKeywords": [], "improvements": [], "detectedSkills": [], "experienceLevel": "string", "correctedResume": "string", "roadmap": [], "issues": [], "atsCheck": { "overallScore": number, "keywordMatch": { "matchedKeywords": [], "missingKeywords": [] }, "formatting": { "hasTables": boolean, "hasGraphics": boolean, "hasColumns": boolean, "usesStandardHeadings": boolean, "fontCompatibility": "string", "issues": [] }, "recommendations": [] } }`;
 
-        const response = await generateContentWithRetry([prompt, pdfPart], 'gemini-flash-lite-latest');
+        const response = await generateContentWithRetry([prompt, pdfPart], 'gemini-1.5-flash');
         const text = response.text();
         
         try {
@@ -115,7 +114,7 @@ Return ONLY valid JSON: { "score": number, "atsScore": number, "keywordScore": n
         throw aiError;
       }
     } else {
-      // ✅ Fallback to text extraction for DOCX, DOC, and TXT files
+      // ✅ Fallback to text extraction for DOCX, DOC, and TXT
       let extractedText;
       try {
         if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === 'docx') {
@@ -143,7 +142,7 @@ Return ONLY valid JSON: { "score": number, "atsScore": number, "keywordScore": n
 Return ONLY valid JSON: { "score": number, "atsScore": number, "keywordScore": number, "formattingScore": number, "overallScore": number, "strengths": [], "weaknesses": [], "missingSkills": [], "missingKeywords": [], "improvements": [], "detectedSkills": [], "experienceLevel": "string", "correctedResume": "string", "roadmap": [], "issues": [], "atsCheck": { "overallScore": number, "keywordMatch": { "matchedKeywords": [], "missingKeywords": [] }, "formatting": { "hasTables": boolean, "hasGraphics": boolean, "hasColumns": boolean, "usesStandardHeadings": boolean, "fontCompatibility": "string", "issues": [] }, "recommendations": [] } }
 Resume Text: ${extractedText.substring(0, 4000)}`;
         
-        const response = await generateContentWithRetry(prompt, 'gemini-flash-lite-latest');
+        const response = await generateContentWithRetry(prompt, 'gemini-1.5-flash');
         const text = response.text();
         
         try {
@@ -170,7 +169,7 @@ Resume Text: ${extractedText.substring(0, 4000)}`;
     const userId = req.user?._id || req.user?.id;
     if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
-    // ✅ Sanitize roadmap array to match Mongoose schema (prevents validation CastErrors if Gemini returns flat strings)
+    // ✅ Sanitize roadmap array to match Mongoose schema
     if (Array.isArray(analysis.roadmap)) {
       analysis.roadmap = analysis.roadmap.map(item => {
         if (typeof item === 'string') {
@@ -194,7 +193,7 @@ Resume Text: ${extractedText.substring(0, 4000)}`;
       analysis.roadmap = [];
     }
 
-    // ✅ Sanitize issues array to match Mongoose schema (prevents validation CastErrors if Gemini returns flat strings)
+    // ✅ Sanitize issues array to match Mongoose schema
     if (Array.isArray(analysis.issues)) {
       analysis.issues = analysis.issues.map(item => {
         if (typeof item === 'string') {
@@ -301,7 +300,7 @@ export const generateCoverLetter = async (req, res) => {
 
     let coverLetter;
     try {
-      const response = await generateContentWithRetry(prompt, 'gemini-flash-lite-latest');
+      const response = await generateContentWithRetry(prompt, 'gemini-1.5-flash');
       coverLetter = response.text().trim();
     } catch (aiError) {
       console.warn('Gemini API Error for Cover Letter:', aiError.message);
@@ -385,7 +384,7 @@ Return ONLY valid JSON array: [{"question":"text","answer":"text","category":"Te
 
     let questions;
     try {
-      const response = await generateContentWithRetry(prompt, 'gemini-flash-lite-latest');
+      const response = await generateContentWithRetry(prompt, 'gemini-1.5-flash');
       const text = response.text().replace(/```json/gi, '').replace(/```/g, '').trim();
       
       try {
@@ -447,7 +446,7 @@ Return ONLY valid JSON array: [{"question":"text","answer":"text","category":"Te
   }
 };
 
-// ✅ getAnalysisHistory - Fetch user's analysis history
+// ✅ getAnalysisHistory
 export const getAnalysisHistory = async (req, res) => {
   try {
     const userId = req.user._id || req.user.id;
@@ -456,7 +455,6 @@ export const getAnalysisHistory = async (req, res) => {
       .sort({ uploadedAt: -1 })
       .limit(20);
     
-    // Flatten analysis object for easier frontend consumption
     const flattenedHistory = history.map(item => {
       const obj = item.toObject();
       const analysisObj = obj.analysis || {};
@@ -481,7 +479,7 @@ export const getAnalysisHistory = async (req, res) => {
   }
 };
 
-// ✅ getAnalysisDetail - Fetch single analysis by ID
+// ✅ getAnalysisDetail
 export const getAnalysisDetail = async (req, res) => {
   try {
     const { id } = req.params;
@@ -493,7 +491,6 @@ export const getAnalysisDetail = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Analysis not found' });
     }
     
-    // Flatten analysis object for easier frontend consumption
     const obj = analysis.toObject();
     const analysisObj = obj.analysis || {};
     delete obj.analysis;
@@ -513,7 +510,7 @@ export const getAnalysisDetail = async (req, res) => {
   }
 };
 
-// ✅ deleteAnalysisHistory - Delete analysis by ID (FIXES THE ERROR!)
+// ✅ deleteAnalysisHistory
 export const deleteAnalysisHistory = async (req, res) => {
   try {
     const { id } = req.params;
@@ -547,7 +544,7 @@ export const deleteAnalysisHistory = async (req, res) => {
   }
 };
 
-// ✅ emailResume - Email optimized resume to user (Robust and HTML-styled)
+// ✅ emailResume - PRODUCTION READY with HTML email + error handling
 export const emailResume = async (req, res) => {
   try {
     const { email, targetRole, correctedResume, score, atsScore, strengths, atsCheck, roadmap } = req.body;
@@ -556,7 +553,12 @@ export const emailResume = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Email and resume content are required' });
     }
     
-    // ✅ Process input data robustly (prevents TypeError crashes from null/undefined or non-array fields)
+    // ✅ Verify env vars exist
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      return res.status(500).json({ success: false, error: 'Email credentials not configured on server' });
+    }
+
+    // ✅ Process input data robustly
     const safeStrengths = Array.isArray(strengths)
       ? strengths.map(s => typeof s === 'string' ? s.trim() : JSON.stringify(s))
       : (typeof strengths === 'string' && strengths.trim() ? [strengths.trim()] : []);
@@ -590,22 +592,24 @@ export const emailResume = async (req, res) => {
       }).filter(step => step.actionStep);
     }
     
-    // ✅ Configure transporter with robust TLS & SSL fallback
+    // ✅ Configure transporter with explicit SMTP + TLS fallback
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
       host: 'smtp.gmail.com',
       port: 465,
       secure: true,
       auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
+        pass: process.env.EMAIL_PASS, // Must be 16-char App Password
       },
       tls: {
-        rejectUnauthorized: false // Prevents SSL root certificate errors in local/production Node environments
+        rejectUnauthorized: false // Prevents SSL certificate errors
       }
     });
     
-    // ✅ Generate beautiful plain-text fallback
+    // ✅ Verify connection before sending
+    await transporter.verify();
+    
+    // ✅ Generate plain-text fallback
     const textContent = `
 Hi there,
 
@@ -631,10 +635,10 @@ ${correctedResume}
 This resume was optimized using AI-powered ATS analysis. 
 For best results, save as PDF before submitting to employers.
 
-Generated by Shortlisted AI • https://shortlisted.ai
+Generated by Shortlisted AI • ${process.env.FRONTEND_URL || 'https://shortlisted.ai'}
     `;
 
-    // ✅ Generate premium HTML styled email (Harmonious colors, responsive layout, extremely premium aesthetic)
+    // ✅ Generate premium HTML email
     const emailHtml = `
       <!DOCTYPE html>
       <html>
@@ -741,25 +745,26 @@ Generated by Shortlisted AI • https://shortlisted.ai
 
     // ✅ Send email with both HTML and plain-text fallback
     await transporter.sendMail({
-      from: process.env.EMAIL_USER,
+      from: `"Shortlisted AI" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: `Your Optimized Resume - ${targetRole} • Shortlisted AI`,
       text: textContent,
       html: emailHtml
     });
     
+    console.log(`✅ Email sent successfully to ${email}`);
     res.json({ success: true, message: 'Resume sent successfully!' });
     
   } catch (error) {
-    console.error('Email error:', error);
+    console.error('❌ Email send failed:', error.message);
     res.status(500).json({ 
       success: false, 
-      error: error.message || 'Failed to send email. Please check your email configuration.' 
+      error: error.message || 'Failed to send email. Please check server logs.' 
     });
   }
 };
 
-// ✅ exportATSReport - Generate and download ATS Report PDF
+// ✅ exportATSReport
 export const exportATSReport = async (req, res) => {
   try {
     const { targetRole, score, atsCheck, roadmap, strengths, weaknesses } = req.body;
