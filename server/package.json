@@ -1,4 +1,11 @@
 {
+  "name": "shortlisted-ai-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "bcrypt": "^5.1.1",
