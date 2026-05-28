@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 let socket;
 
 export const initSocketClient = (token, onConnect, onEvent) => {
-  const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:5001';
+  const API_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:5002';
   
   socket = io(API_URL, {
     auth: { token },

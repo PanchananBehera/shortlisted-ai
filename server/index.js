@@ -1,4 +1,4 @@
-// server/index.js - FINAL PRODUCTION VERSION
+// server/index.js - FINAL PRODUCTION VERSION with Error Reporting
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -15,10 +15,15 @@ import analyticsRoutes from './routes/analyticsRoutes.js';
 import profileRoutes from './routes/profile.js';
 import profileControllerRoutes from './routes/profileRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+// ✅ NEW: Error reporting routes
+import errorReportRoutes from './routes/errorReports.js';
 
 // ✅ Real-Time Tracking Imports
 import { initSocket } from './utils/socket.js';
 import { startTrackingService } from './utils/userTracker.js';
+
+// ✅ Middleware
+import { limitErrorReports } from './middleware/rateLimit.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -37,7 +42,14 @@ startTrackingService();
 
 // ✅ Helper: Get allowed CORS origins (handles comma-separated env var)
 const getAllowedOrigins = () => {
-  const defaultOrigins = ['http://localhost:5173', 'http://localhost:5174'];
+  const defaultOrigins = [
+    'http://localhost:5173', 
+    'http://localhost:5174',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174',
+    'http://[::1]:5173',
+    'http://[::1]:5174'
+  ];
   const rawUrl = process.env.FRONTEND_URL;
   
   if (!rawUrl) return defaultOrigins;
@@ -96,6 +108,9 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/user/profile', profileRoutes);
 app.use('/api/profile', profileControllerRoutes);
 app.use('/api/admin', adminRoutes);
+// ✅ NEW: Error reporting routes (public endpoint for reports)
+app.use('/api/reports', errorReportRoutes);
+app.use('/api/admin/reports', errorReportRoutes);
 
 // ✅ Health Check (enhanced for uptime monitoring)
 app.get('/api/health', (req, res) => {
@@ -113,15 +128,46 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({ 
     message: 'Shortlisted AI API running ✅',
-    features: ['auth', 'ai-assistant', 'resume-analyzer', 'real-time-tracking'],
+    features: ['auth', 'ai-assistant', 'resume-analyzer', 'real-time-tracking', 'error-reporting'],
     docs: 'https://github.com/yourusername/shortlisted-ai',
     health: '/api/health'
   });
 });
 
-// ✅ Global Error Handler (production-safe)
+// ✅ Global Error Handler (production-safe + auto-reporting)
 app.use((err, req, res, next) => {
   const isProduction = process.env.NODE_ENV === 'production';
+  
+  // 🚨 Auto-report critical server errors (fire-and-forget, don't block response)
+  if (isProduction && err.statusCode >= 500 && !err.reported) {
+    // Mark as reported to prevent infinite loops
+    err.reported = true;
+    
+    // Import dynamically to avoid circular dependencies
+    import('./models/ErrorReport.js').then(({ default: ErrorReport }) => {
+      ErrorReport.create({
+        type: 'server_error',
+        message: err.message,
+        context: {
+          statusCode: err.statusCode,
+          path: req.originalUrl || req.url,
+          method: req.method,
+          userAgent: req.get('user-agent'),
+          timestamp: new Date().toISOString()
+        },
+        user: {
+          _id: req.user?._id || null,
+          email: req.user?.email || null
+        },
+        severity: 'critical'
+      }).catch(reportErr => {
+        // Silently fail - never let reporting break error handling
+        console.warn('⚠️ Failed to auto-report server error:', reportErr.message);
+      });
+    }).catch(() => {
+      // Ignore import errors in error handler
+    });
+  }
   
   // Log appropriately
   if (isProduction) {
@@ -130,17 +176,20 @@ app.use((err, req, res, next) => {
       stack: err.stack?.split('\n')[0],
       url: req.url,
       method: req.method,
-      userId: req.user?._id || 'anonymous'
+      userId: req.user?._id || 'anonymous',
+      statusCode: err.statusCode
     });
   } else {
     console.error('Server Error:', err);
   }
   
   // Safe response
-  res.status(500).json({ 
+  res.status(err.statusCode || 500).json({ 
     success: false, 
     error: isProduction ? 'Internal server error' : err.message,
-    ...(isProduction ? {} : { stack: err.stack })
+    ...(isProduction ? {} : { stack: err.stack }),
+    // ✅ Include request ID for support tracing (if you have one)
+    requestId: req.id || null
   });
 });
 
@@ -156,7 +205,8 @@ app.use((req, res) => {
       'GET /api/auth/me',
       'POST /api/ai/analyze-resume',
       'POST /api/ai/cover-letter',
-      'POST /api/ai/interview-qa'
+      'POST /api/ai/interview-qa',
+      'POST /api/reports/error' // ✅ NEW: Error reporting endpoint
     ]
   });
 });
@@ -173,6 +223,7 @@ const startServer = async () => {
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`✅ Server running on port ${PORT}`);
       console.log(`🔌 Real-time tracking enabled (Socket.io)`);
+      console.log(`🐛 Error reporting enabled: POST /api/reports/error`);
       console.log(`🌐 Frontend: ${getAllowedOrigins().filter(u => !u.includes('localhost')).join(', ') || 'http://localhost:5173'}`);
       console.log(`📊 Analytics: /admin/analytics`);
       console.log(`🔐 Environment: ${process.env.NODE_ENV || 'development'}`);

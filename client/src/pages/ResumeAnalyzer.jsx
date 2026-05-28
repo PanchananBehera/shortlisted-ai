@@ -1,22 +1,28 @@
-// src/pages/ResumeAnalyzer.jsx - PRODUCTION READY with Real-Time Tracking
+// src/pages/ResumeAnalyzer.jsx - PRODUCTION READY with Real-Time Tracking + User-Friendly Errors
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../utils/axios';
 import { useAuth } from '../context/AuthContext';
-import { useRealTime } from '../context/RealTimeContext'; // ✅ Real-time tracking hook
+import { useRealTime } from '../context/RealTimeContext';
+// ✅ NEW: Import user-friendly error components
+import UserFeedbackBanner from '../components/UserFeedbackBanner';
+import { reportIssue } from '../api/report';
 
 const ResumeAnalyzer = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const { trackEvent, trackPageView, trackInteraction, isConnected } = useRealTime(); // ✅ Tracking functions
+  const { trackEvent, trackPageView, trackInteraction, isConnected } = useRealTime();
   
   const [file, setFile] = useState(null);
   const [targetRole, setTargetRole] = useState('Software Engineer');
   const [jobDescription, setJobDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
+  
+  // ✅ UPDATED: Error state now holds structured data
+  const [error, setError] = useState(null); // null | { type: string, message: string, raw: Error }
+  
   const [fileName, setFileName] = useState('');
   const [profilePhoto, setProfilePhoto] = useState(null);
   const [includePhoto, setIncludePhoto] = useState(false);
@@ -34,21 +40,32 @@ const ResumeAnalyzer = () => {
   const pageStartTime = useRef(Date.now());
   const analysisStartTime = useRef(null);
 
+  // ✅ Store state in refs to keep the page-mount effect isolated from state change cycles
+  const resultRef = useRef(result);
+  useEffect(() => {
+    resultRef.current = result;
+  }, [result]);
+
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
   // ✅ Track: Page view on mount
   useEffect(() => {
     trackPageView('/resume-analyzer', 'Resume Analyzer - Shortlisted AI');
-    trackEvent('feature:view', { feature: 'resume-analyzer', userId: user?._id });
+    trackEvent('feature:view', { feature: 'resume-analyzer', userId: userRef.current?._id });
     
     return () => {
-      // Track time spent when unmounting
       const timeSpent = Date.now() - pageStartTime.current;
       trackEvent('feature:exit', { 
         feature: 'resume-analyzer', 
         timeSpent,
-        hadResult: !!result 
+        hadResult: !!resultRef.current 
       });
     };
-  }, [trackPageView, trackEvent, user, result]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ✅ Track: Tab switches for engagement insights
   useEffect(() => {
@@ -95,7 +112,6 @@ const ResumeAnalyzer = () => {
       setProfilePhoto(selectedFile);
       setPhotoPreview(URL.createObjectURL(selectedFile));
       
-      // ✅ Track: Profile photo added
       trackInteraction('resume-analyzer', 'photo-add', '#photo-upload', {
         fileType: selectedFile.type,
         fileSize: selectedFile.size
@@ -110,11 +126,17 @@ const ResumeAnalyzer = () => {
       const validationErrors = validateFile(selectedFile);
       
       if (validationErrors.length > 0) {
-        setError(validationErrors.join(' '));
+        // ✅ Show user-friendly error for validation failures
+        setError({
+          type: validationErrors.some(e => e.includes('size')) ? 'file_too_large' : 
+                validationErrors.some(e => e.includes('PDF') || e.includes('empty')) ? 'empty_file' :
+                'invalid_file_type',
+          message: validationErrors.join(' '),
+          raw: null
+        });
         setFile(null);
         setFileName('');
         
-        // ✅ Track: File validation failed
         trackInteraction('resume-analyzer', 'file-rejected', '#file-upload', {
           reason: validationErrors.join('; '),
           fileType: selectedFile.type,
@@ -125,9 +147,8 @@ const ResumeAnalyzer = () => {
       
       setFile(selectedFile);
       setFileName(selectedFile.name);
-      setError('');
+      setError(null);
       
-      // ✅ Track: Valid file selected
       trackInteraction('resume-analyzer', 'file-selected', '#file-upload', {
         fileName: selectedFile.name,
         fileType: selectedFile.type,
@@ -144,41 +165,67 @@ const ResumeAnalyzer = () => {
       const res = await api.get('/ai/history');
       if (res.data.success) {
         setHistory(res.data.history);
-        // ✅ Track: History loaded successfully
         trackEvent('feature:history-load', { count: res.data.history?.length || 0 });
       }
     } catch (err) {
       console.error('Failed to fetch history:', err);
-      setError('Could not load analysis history');
-      // ✅ Track: History load failed
+      // ✅ Don't block UI for history errors
       trackEvent('feature:history-error', { error: err.message });
     } finally {
       setHistoryLoading(false);
     }
   };
 
+  // ✅ Helper: Map technical errors to user-friendly types
+  const getErrorType = (error) => {
+    const status = error.response?.status;
+    const message = error.message?.toLowerCase() || '';
+    
+    if (status === 413) return 'file_too_large';
+    if (status === 400) {
+      if (message.includes('pdf') || message.includes('file')) return 'invalid_file_type';
+      if (message.includes('empty')) return 'empty_file';
+      return 'invalid_file_type';
+    }
+    if (status === 401) return 'unauthorized';
+    if (status === 429) return 'quota_exceeded';
+    if (status === 504 || status === 502) return 'ai_timeout';
+    if (status >= 500) return 'analysis_failed';
+    if (message.includes('network') || message.includes('fetch')) return 'network_error';
+    
+    return 'generic';
+  };
+
   const handleAnalyze = async (e) => {
     e.preventDefault();
     
-    // Final validation before upload
     const validationErrors = validateFile(file);
     if (validationErrors.length > 0) {
-      setError(validationErrors.join(' '));
+      setError({
+        type: validationErrors.some(e => e.includes('size')) ? 'file_too_large' : 
+              validationErrors.some(e => e.includes('PDF') || e.includes('empty')) ? 'empty_file' :
+              'invalid_file_type',
+        message: validationErrors.join(' '),
+        raw: null
+      });
       return;
     }
     
     if (!file) {
-      setError('Please select a PDF resume file');
+      setError({
+        type: 'generic',
+        message: 'Please select a PDF resume file',
+        raw: null
+      });
       return;
     }
 
     setLoading(true);
-    setError('');
+    setError(null); // ✅ Clear previous errors
     setResult(null);
     setActiveTab('overview');
-    analysisStartTime.current = Date.now(); // ✅ Start timing analysis
+    analysisStartTime.current = Date.now();
 
-    // ✅ Track: Analysis started
     trackInteraction('resume-analyzer', 'analyze-start', '#analyze-btn', {
       targetRole,
       hasJobDescription: !!jobDescription,
@@ -197,7 +244,6 @@ const ResumeAnalyzer = () => {
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (progressEvent) => {
           const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          // ✅ Track: Upload progress (optional, sample every 25%)
           if (percentCompleted % 25 === 0) {
             trackEvent('ai:upload-progress', { percent: percentCompleted });
           }
@@ -208,7 +254,6 @@ const ResumeAnalyzer = () => {
         setResult(res.data);
         fetchHistory();
         
-        // ✅ Track: Analysis completed successfully
         const analysisTime = Date.now() - analysisStartTime.current;
         trackInteraction('resume-analyzer', 'analyze-complete', '#results-container', {
           score: res.data.score,
@@ -219,7 +264,6 @@ const ResumeAnalyzer = () => {
           roadmapItems: res.data.roadmap?.length || 0
         });
         
-        // ✅ Track: AI usage for analytics
         trackEvent('ai:resume-analysis', {
           success: true,
           score: res.data.score,
@@ -239,29 +283,45 @@ const ResumeAnalyzer = () => {
         success: false,
         error: err.message,
         statusCode: err.response?.status,
-        targetRole
+        targetRole,
+        fileSize: file?.size,
+        fileType: file?.type
       });
       
-      // User-friendly error messages
-      if (err.response?.status === 413) {
-        setError('File is too large. Please compress your PDF to under 5MB.');
-      } else if (err.response?.status === 400) {
-        setError(err.response?.data?.error || err.response?.data?.message || 'Invalid file. Please upload a valid PDF.');
-      } else if (err.response?.status === 401) {
-        setError('Please log in to analyze your resume');
-        navigate('/login');
-      } else if (err.response?.status === 429) {
-        const retryAfter = err.response?.data?.retryAfter || 60;
-        setError(`⏱️ AI quota exceeded. Please wait ${retryAfter} seconds.`);
-      } else {
-        setError(err.response?.data?.error || err.response?.data?.message || err.message || 'Analysis failed. Please try again.');
+      // ✅ Map to user-friendly error type
+      const errorType = getErrorType(err);
+      const userMessage = err.response?.data?.message || err.message || 'Analysis failed. Please try again.';
+      
+      // ✅ Set structured error state
+      setError({
+        type: errorType,
+        message: userMessage,
+        raw: err
+      });
+      
+      // ✅ Auto-report critical errors silently
+      if (['analysis_failed', 'ai_timeout', 'network_error'].includes(errorType)) {
+        reportIssue({
+          type: errorType,
+          message: userMessage,
+          context: {
+            targetRole,
+            fileSize: file?.size,
+            fileType: file?.type,
+            hasJobDescription: !!jobDescription,
+            includePhoto,
+            fileName: file?.name
+          },
+          userId: user?._id,
+          userEmail: user?.email
+        });
       }
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle Email Resume WITH PDF Attachment
+  // Handle Email Resume
   const handleEmailResume = async () => {
     if (!user?.email) {
       alert('Please log in to send email.');
@@ -275,7 +335,6 @@ const ResumeAnalyzer = () => {
 
     if (!window.confirm(`Send optimized resume + ATS Report PDF to ${user.email}?`)) return;
 
-    // ✅ Track: Email action initiated
     trackInteraction('resume-analyzer', 'email-initiate', '#email-btn', {
       userEmail: user.email,
       targetRole,
@@ -295,14 +354,11 @@ const ResumeAnalyzer = () => {
         roadmap: result.roadmap
       });
       alert('✅ Resume + ATS Report sent successfully! Check your inbox.');
-      
-      // ✅ Track: Email sent successfully
       trackInteraction('resume-analyzer', 'email-complete', '#email-btn', { success: true });
       
     } catch (err) {
       console.error('Email error:', err);
       alert('❌ Failed to send email. Please try again.');
-      // ✅ Track: Email failed
       trackInteraction('resume-analyzer', 'email-error', '#email-btn', { error: err.message });
     } finally {
       setEmailLoading(false);
@@ -316,7 +372,6 @@ const ResumeAnalyzer = () => {
       return;
     }
 
-    // ✅ Track: Export initiated
     trackInteraction('resume-analyzer', 'export-initiate', '#export-btn', {
       exportType: 'ats-report',
       targetRole,
@@ -340,13 +395,11 @@ const ResumeAnalyzer = () => {
       link.remove();
       
       alert('✅ ATS Report downloaded successfully!');
-      // ✅ Track: Export completed
       trackInteraction('resume-analyzer', 'export-complete', '#export-btn', { success: true });
       
     } catch (err) {
       console.error('PDF export error:', err);
       alert('❌ Failed to generate PDF report.');
-      // ✅ Track: Export failed
       trackInteraction('resume-analyzer', 'export-error', '#export-btn', { error: err.message });
     }
   };
@@ -369,7 +422,6 @@ const ResumeAnalyzer = () => {
     navigator.clipboard.writeText(text);
     alert('📋 Optimized resume copied to clipboard!');
     
-    // ✅ Track: Copy action
     trackInteraction('resume-analyzer', 'copy-resume', '#copy-btn', {
       textLength: text?.length || 0,
       targetRole
@@ -377,7 +429,6 @@ const ResumeAnalyzer = () => {
   };
 
   const downloadPDF = async () => {
-    // ✅ Track: PDF download initiated
     trackInteraction('resume-analyzer', 'download-pdf', '#download-btn', {
       includePhoto,
       targetRole,
@@ -441,7 +492,6 @@ const ResumeAnalyzer = () => {
       const outputFileName = `Optimized_Resume_${targetRole.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(outputFileName);
       
-      // ✅ Track: PDF download completed
       trackInteraction('resume-analyzer', 'download-complete', '#download-btn', { 
         success: true, 
         pageCount 
@@ -449,8 +499,11 @@ const ResumeAnalyzer = () => {
       
     } catch (err) {
       console.error('PDF generation error:', err);
-      setError('Failed to generate PDF. Please try copying the text instead.');
-      // ✅ Track: PDF download failed
+      setError({
+        type: 'generic',
+        message: 'Failed to generate PDF. Please try copying the text instead.',
+        raw: err
+      });
       trackInteraction('resume-analyzer', 'download-error', '#download-btn', { error: err.message });
     }
   };
@@ -465,7 +518,6 @@ const ResumeAnalyzer = () => {
     a.click();
     URL.revokeObjectURL(url);
     
-    // ✅ Track: History resume download
     trackInteraction('resume-analyzer', 'history-download', '#history-download-btn', {
       targetRole,
       createdAt
@@ -506,7 +558,6 @@ const ResumeAnalyzer = () => {
       setActiveTab('overview');
       navigate('/resume-analyzer', { replace: true, state: {} });
       
-      // ✅ Track: Preloaded analysis viewed
       trackEvent('feature:preloaded-view', {
         analysisId: preloaded._id,
         score: preloaded.score,
@@ -515,7 +566,6 @@ const ResumeAnalyzer = () => {
     }
   }, [location, navigate, trackEvent]);
 
-  // ✅ Track: Photo toggle change
   const handlePhotoToggle = (e) => {
     setIncludePhoto(e.target.checked);
     trackInteraction('resume-analyzer', 'photo-toggle', '#photo-include-checkbox', {
@@ -523,7 +573,6 @@ const ResumeAnalyzer = () => {
     });
   };
 
-  // ✅ Track: Target role change
   const handleRoleChange = (e) => {
     const newRole = e.target.value;
     setTargetRole(newRole);
@@ -554,7 +603,6 @@ const ResumeAnalyzer = () => {
               value={jobDescription}
               onChange={(e) => {
                 setJobDescription(e.target.value);
-                // ✅ Track: Job description input (debounced in production)
                 if (e.target.value.length > 50) {
                   trackInteraction('resume-analyzer', 'job-desc-input', '#job-description', {
                     charCount: e.target.value.length
@@ -567,7 +615,7 @@ const ResumeAnalyzer = () => {
             <p className="text-xs text-gray-500 dark:text-gray-500 mt-1 transition-colors">Helps AI match your resume to exact job requirements</p>
           </div>
 
-          {/* File Upload - PDF, DOCX, TXT */}
+          {/* File Upload */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
               Upload Resume (PDF, DOCX, TXT)
@@ -596,7 +644,6 @@ const ResumeAnalyzer = () => {
               </label>
             </div>
             
-            {/* Selected File Display */}
             {fileName && (
               <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-xl flex items-center gap-3 transition-colors">
                 <span className="text-2xl">📄</span>
@@ -608,7 +655,7 @@ const ResumeAnalyzer = () => {
                 </div>
                 <button 
                   type="button" 
-                  onClick={() => { setFile(null); setFileName(''); setError(''); }} 
+                  onClick={() => { setFile(null); setFileName(''); setError(null); }} 
                   className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 transition-colors flex-shrink-0"
                 >
                   ✕
@@ -616,7 +663,6 @@ const ResumeAnalyzer = () => {
               </div>
             )}
             
-            {/* Helper Text */}
             <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
               <p className="text-xs text-blue-700 dark:text-blue-300 flex items-start gap-2">
                 <span>💡</span>
@@ -647,7 +693,7 @@ const ResumeAnalyzer = () => {
             </select>
           </div>
 
-          {/* Profile Photo (Optional & ATS-Safe) */}
+          {/* Profile Photo */}
           <div className="space-y-3 pt-2 border-t border-gray-200/50 dark:border-slate-800 transition-colors">
             <div className="flex items-center justify-between">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors">Profile Photo</label>
@@ -686,21 +732,24 @@ const ResumeAnalyzer = () => {
             </div>
           </div>
 
-          {/* Error Message */}
+          {/* ✅ UPDATED: User-Friendly Error Banner */}
           {error && (
-            <div className="p-4 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl text-rose-700 dark:text-rose-300 transition-colors">
-              <p className="font-medium">⚠️ {error}</p>
-              {error.includes('PDF') && (
-                <p className="text-sm mt-2">
-                  <strong>Need help?</strong> Convert your file to PDF using:
-                  <ul className="list-disc list-inside mt-1 text-xs">
-                    <li>Google Docs: File → Download → PDF</li>
-                    <li>Microsoft Word: File → Save As → PDF</li>
-                    <li>Online: ilovepdf.com or smallpdf.com</li>
-                  </ul>
-                </p>
-              )}
-            </div>
+            <UserFeedbackBanner 
+              errorType={error.type}
+              errorMessage={error.message}
+              onRetry={() => {
+                setError(null);
+                // Optional: auto-retry logic if needed
+              }}
+              context={{
+                targetRole,
+                fileSize: file?.size,
+                fileType: file?.type,
+                hasJobDescription: !!jobDescription,
+                includePhoto,
+                fileName: file?.name
+              }}
+            />
           )}
 
           {/* Analyze Button */}
@@ -725,7 +774,6 @@ const ResumeAnalyzer = () => {
             )}
           </button>
           
-          {/* Loading Progress */}
           {loading && (
             <div className="text-center text-sm text-gray-500 dark:text-gray-400">
               <p>🔍 Extracting text from PDF...</p>
@@ -796,7 +844,6 @@ const ResumeAnalyzer = () => {
                     </p>
                   </div>
                   
-                  {/* Export ATS Report Button */}
                   <button
                     onClick={handleExportATSReport}
                     className="px-4 py-2 text-sm bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-xl hover:bg-purple-200 dark:hover:bg-purple-900/50 transition flex items-center gap-2"
@@ -896,7 +943,6 @@ const ResumeAnalyzer = () => {
                   <div className="flex gap-2">
                     <button onClick={() => copyToClipboard(result.correctedResume)} className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200/50 dark:border-slate-700 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-800 transition text-green-600 dark:text-green-400">📋 Copy</button>
                     
-                    {/* EMAIL BUTTON */}
                     <button 
                       onClick={handleEmailResume} 
                       disabled={emailLoading || !user}
@@ -986,7 +1032,6 @@ const ResumeAnalyzer = () => {
                           setResult(item);
                           setActiveTab('overview');
                           setTargetRole(item.targetRole);
-                          // ✅ Track: History item selected
                           trackInteraction('resume-analyzer', 'history-select', '#history-item', {
                             analysisId: item._id,
                             score: item.score
@@ -1050,7 +1095,6 @@ const ResumeAnalyzer = () => {
                 setPhotoPreview('');
                 setIncludePhoto(false);
                 setActiveTab('overview');
-                // ✅ Track: Reset analyzer
                 trackEvent('feature:reset', { feature: 'resume-analyzer' });
               }}
               className="text-green-600 dark:text-green-400 hover:underline font-medium transition-colors"

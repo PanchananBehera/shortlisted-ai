@@ -7,7 +7,14 @@ let io;
 
 export const initSocket = (server) => {
   const getAllowedOrigins = () => {
-    const defaultOrigins = ['http://localhost:5173', 'http://localhost:5174'];
+    const defaultOrigins = [
+      'http://localhost:5173', 
+      'http://localhost:5174',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:5174',
+      'http://[::1]:5173',
+      'http://[::1]:5174'
+    ];
     const rawUrl = process.env.FRONTEND_URL;
     if (!rawUrl) return defaultOrigins;
     

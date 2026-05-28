@@ -24,6 +24,8 @@ import ATSChecker from './pages/ATSChecker';
 import History from './pages/History';
 import AboutUs from './pages/AboutUs';
 import AdvancedAnalytics from './pages/AdvancedAnalytics';
+import ErrorReports from './pages/ErrorReports';
+
 
 function App() {
   return (
@@ -122,6 +124,16 @@ function App() {
                 </MainLayout>
               </ProtectedRoute>
             } />
+
+            {/* Admin Error Reports */}
+            <Route path="/admin/errors" element={
+              <ProtectedRoute adminOnly={true}>
+                <MainLayout>
+                  <ErrorReports />
+                </MainLayout>
+              </ProtectedRoute>
+            } />
+
 
             {/* 404 */}
             <Route path="*" element={

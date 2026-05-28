@@ -1,65 +1,107 @@
-// src/pages/Register.jsx
-import React, { useState } from 'react';
+// src/pages/Register.jsx - PRODUCTION READY
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import api from '../utils/axios';
 
 const Register = () => {
   const [formData, setFormData] = useState({
-    name: '',
+    fullName: '',
     email: '',
     password: '',
     confirmPassword: ''
   });
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [localError, setLocalError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const { register, isAuthenticated, error: authError, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+
+  // ✅ Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, authLoading, navigate]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-    if (error) setError('');
+    if (localError || authError) {
+      setLocalError('');
+    }
+  };
+
+  const validateForm = () => {
+    if (!formData.fullName.trim()) {
+      return 'Full name is required';
+    }
+    if (!formData.email.trim()) {
+      return 'Email is required';
+    }
+    if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      return 'Please enter a valid email address';
+    }
+    if (formData.password.length < 8) {
+      return 'Password must be at least 8 characters long';
+    }
+    if (formData.password !== formData.confirmPassword) {
+      return 'Passwords do not match';
+    }
+    return null;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match. Please try again.');
+    
+    if (isSubmitting || authLoading) return;
+    
+    // Client-side validation
+    const validationError = validateForm();
+    if (validationError) {
+      setLocalError(validationError);
       return;
     }
-    if (formData.password.length < 8) {
-      setError('Password must be at least 8 characters long.');
-      return;
-    }
-
-    setLoading(true);
+    
+    setIsSubmitting(true);
+    setLocalError('');
 
     try {
-      const res = await api.post('/auth/register', {
-        fullName: formData.name,
-        email: formData.email,
-        password: formData.password
-      });
-
-      const { token, ...userData } = res.data;
-      login(token, userData);
-      navigate('/dashboard');
+      const result = await register(formData.fullName, formData.email, formData.password);
       
+      if (result.success) {
+        navigate('/dashboard', { replace: true });
+      } else {
+        setLocalError(result.error);
+      }
     } catch (err) {
-      const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Registration failed. Email may already be in use.';
-      setError(errorMsg);
+      setLocalError('An unexpected error occurred. Please try again.');
+      console.error('Register error:', err);
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
+  // Show loading state
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#fafaf8] dark:bg-slate-950">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-green-500 border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  // If already authenticated, don't show register form
+  if (isAuthenticated) {
+    return null; // Will redirect via useEffect
+  }
+
+  const displayError = localError || authError;
+
   return (
-    <div className="min-h-screen bg-[#fafaf8] dark:bg-slate-950 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 transition-colors duration-300">
+    <div className="min-h-screen bg-[#fafaf8] dark:bg-slate-950 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 transition-colors">
       <div className="max-w-md w-full">
         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm p-8 sm:p-10 border border-gray-200/50 dark:border-slate-800 transition-colors">
           
+          {/* Header */}
           <div className="text-center mb-8">
             <Link to="/" className="inline-flex items-center justify-center mb-4 group">
               <div className="w-14 h-14 bg-green-500 dark:bg-green-600 rounded-xl flex items-center justify-center shadow-md group-hover:scale-105 transition-all">
@@ -74,30 +116,35 @@ const Register = () => {
             </p>
           </div>
 
-          {error && (
+          {/* Error Message */}
+          {displayError && (
             <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl text-rose-700 dark:text-rose-300 text-sm text-center transition-colors">
-              {error}
+              {displayError}
             </div>
           )}
 
+          {/* Register Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Full Name */}
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
+              <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Full Name
               </label>
               <input
-                id="name"
-                name="name"
+                id="fullName"
+                name="fullName"
                 type="text"
                 required
                 autoComplete="name"
-                value={formData.name}
+                value={formData.fullName}
                 onChange={handleChange}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                disabled={isSubmitting}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
                 placeholder="Chintu"
               />
             </div>
 
+            {/* Email */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Email Address
@@ -110,11 +157,13 @@ const Register = () => {
                 autoComplete="email"
                 value={formData.email}
                 onChange={handleChange}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                disabled={isSubmitting}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
                 placeholder="you@university.edu"
               />
             </div>
 
+            {/* Password */}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Password
@@ -128,12 +177,14 @@ const Register = () => {
                 minLength="8"
                 value={formData.password}
                 onChange={handleChange}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                disabled={isSubmitting}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
                 placeholder="••••••••"
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-500 transition-colors">Minimum 8 characters</p>
             </div>
 
+            {/* Confirm Password */}
             <div>
               <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Confirm Password
@@ -145,11 +196,13 @@ const Register = () => {
                 required
                 value={formData.confirmPassword}
                 onChange={handleChange}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                disabled={isSubmitting}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
                 placeholder="••••••••"
               />
             </div>
 
+            {/* Terms Checkbox */}
             <div className="flex items-start">
               <input
                 id="terms"
@@ -166,12 +219,13 @@ const Register = () => {
               </label>
             </div>
 
+            {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={isSubmitting || authLoading}
               className="w-full bg-green-500 dark:bg-green-600 text-white py-3 px-4 rounded-full font-semibold hover:bg-green-600 dark:hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 dark:focus:ring-offset-slate-900 transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed shadow-md hover:shadow-lg flex items-center justify-center"
             >
-              {loading ? (
+              {isSubmitting ? (
                 <>
                   <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -185,6 +239,7 @@ const Register = () => {
             </button>
           </form>
 
+          {/* Login Link */}
           <div className="mt-8">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -204,6 +259,7 @@ const Register = () => {
           </div>
         </div>
 
+        {/* Footer */}
         <p className="mt-8 text-center text-sm text-gray-500 dark:text-gray-500 transition-colors">
           Built for tech aspirants • Free forever • No credit card required
         </p>

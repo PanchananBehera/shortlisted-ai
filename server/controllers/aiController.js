@@ -1,4 +1,4 @@
-// server/controllers/aiController.js - FINAL PRODUCTION VERSION
+// server/controllers/aiController.js - FINAL: Simple Model + Clean Errors
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 import PDFDocument from 'pdfkit';
@@ -24,9 +24,9 @@ const checkRateLimit = (userId, limit = parseInt(process.env.AI_RATE_LIMIT || '1
   return { allowed: true };
 };
 
-// ✅ API Key Rotation & Fallback with Exponential Backoff
+// ✅ API Key Rotation & Robust Self-Healing Fallback Logic
 let currentKeyIndex = 0;
-const generateContentWithRetry = async (prompt, modelName = 'gemini-1.5-flash', retries = 0) => {
+const generateContentWithRetry = async (prompt, modelName = 'gemini-2.5-flash', retries = 0) => {
   const keys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k);
   if (keys.length === 0) throw new Error("GEMINI_API_KEY is not set in .env");
   
@@ -42,20 +42,47 @@ const generateContentWithRetry = async (prompt, modelName = 'gemini-1.5-flash', 
                        error.message?.includes('quota') || 
                        error.message?.includes('exceeded') || 
                        error.message?.includes('RESOURCE_EXHAUSTED');
+
+    const isServiceUnavailable = error.message?.includes('503') ||
+                                 error.message?.includes('Service Unavailable') ||
+                                 error.message?.includes('high demand') ||
+                                 error.message?.includes('overloaded');
     
+    // ✅ Rotation for rate limits
     if (isRateLimit && keys.length > 1 && retries < keys.length) {
       console.warn(`API Key ${currentKeyIndex + 1} hit rate limit. Rotating...`);
       currentKeyIndex = (currentKeyIndex + 1) % keys.length;
       return generateContentWithRetry(prompt, modelName, retries + 1);
     }
     
+    // ✅ Retry for rate limit with exponential backoff
     if (isRateLimit && retries < 2) {
       const delay = Math.pow(2, retries) * 1000;
-      console.log(`Rate limited. Waiting ${delay}ms before retry ${retries + 1}...`);
+      console.log(`Rate limited. Waiting ${delay}ms before retry...`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return generateContentWithRetry(prompt, modelName, retries + 1);
     }
+
+    // ✅ Retry for 503 Service Unavailable (high demand)
+    if (isServiceUnavailable && retries < 2) {
+      const delay = (retries + 1) * 1000;
+      console.warn(`Gemini experiencing high demand (503). Waiting ${delay}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return generateContentWithRetry(prompt, modelName, retries + 1);
+    }
+
+    // ✅ Self-healing cascading model fallback
+    if (modelName === 'gemini-2.5-flash') {
+      console.warn(`⚠️ Gemini 2.5 Flash failed (or experiencing high demand). Falling back to Gemini 3.5 Flash...`);
+      return generateContentWithRetry(prompt, 'gemini-3.5-flash', 0);
+    }
+
+    if (modelName === 'gemini-3.5-flash') {
+      console.warn(`⚠️ Gemini 3.5 Flash failed. Falling back to Gemini 3.1-flash-lite...`);
+      return generateContentWithRetry(prompt, 'gemini-3.1-flash-lite', 0);
+    }
     
+    // ✅ Throw clean error for frontend
     throw error;
   }
 };
@@ -71,9 +98,14 @@ const getCacheKey = (type, data) => {
 // ✅ analyzeResume
 export const analyzeResume = async (req, res) => {
   const startTime = Date.now();
+  let targetRole = 'Software Engineer';
+  let jobDescription = '';
   
   try {
-    const { targetRole = 'Software Engineer', jobDescription = '' } = req.body || {};
+    const body = req.body || {};
+    targetRole = body.targetRole || 'Software Engineer';
+    jobDescription = body.jobDescription || '';
+
     if (!req.file) return res.status(400).json({ success: false, error: 'No file uploaded' });
     if (req.file.size > 5 * 1024 * 1024) return res.status(413).json({ success: false, error: 'File too large' });
 
@@ -95,7 +127,7 @@ export const analyzeResume = async (req, res) => {
         const prompt = `You are an expert ATS optimizer. Analyze the attached resume PDF for role: "${targetRole}". ${jobDescription ? `Job Description:\n${jobDescription}\n` : ''}
 Return ONLY valid JSON: { "score": number, "atsScore": number, "keywordScore": number, "formattingScore": number, "overallScore": number, "strengths": [], "weaknesses": [], "missingSkills": [], "missingKeywords": [], "improvements": [], "detectedSkills": [], "experienceLevel": "string", "correctedResume": "string", "roadmap": [], "issues": [], "atsCheck": { "overallScore": number, "keywordMatch": { "matchedKeywords": [], "missingKeywords": [] }, "formatting": { "hasTables": boolean, "hasGraphics": boolean, "hasColumns": boolean, "usesStandardHeadings": boolean, "fontCompatibility": "string", "issues": [] }, "recommendations": [] } }`;
 
-        const response = await generateContentWithRetry([prompt, pdfPart], 'gemini-1.5-flash');
+        const response = await generateContentWithRetry([prompt, pdfPart], 'gemini-2.5-flash');
         const text = response.text();
         
         try {
@@ -142,7 +174,7 @@ Return ONLY valid JSON: { "score": number, "atsScore": number, "keywordScore": n
 Return ONLY valid JSON: { "score": number, "atsScore": number, "keywordScore": number, "formattingScore": number, "overallScore": number, "strengths": [], "weaknesses": [], "missingSkills": [], "missingKeywords": [], "improvements": [], "detectedSkills": [], "experienceLevel": "string", "correctedResume": "string", "roadmap": [], "issues": [], "atsCheck": { "overallScore": number, "keywordMatch": { "matchedKeywords": [], "missingKeywords": [] }, "formatting": { "hasTables": boolean, "hasGraphics": boolean, "hasColumns": boolean, "usesStandardHeadings": boolean, "fontCompatibility": "string", "issues": [] }, "recommendations": [] } }
 Resume Text: ${extractedText.substring(0, 4000)}`;
         
-        const response = await generateContentWithRetry(prompt, 'gemini-1.5-flash');
+        const response = await generateContentWithRetry(prompt, 'gemini-2.5-flash');
         const text = response.text();
         
         try {
@@ -168,6 +200,63 @@ Resume Text: ${extractedText.substring(0, 4000)}`;
     
     const userId = req.user?._id || req.user?.id;
     if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    // ✅ Helper to sanitize arrays to strictly hold only strings to match Mongoose schema
+    const sanitizeStringArray = (arr) => {
+      if (!Array.isArray(arr)) return [];
+      return arr.map(item => {
+        if (item === null || item === undefined) return '';
+        if (typeof item === 'object') {
+          return item.keyword || item.name || item.skill || JSON.stringify(item);
+        }
+        return String(item);
+      });
+    };
+
+    analysis.strengths = sanitizeStringArray(analysis.strengths);
+    analysis.weaknesses = sanitizeStringArray(analysis.weaknesses);
+    analysis.missingSkills = sanitizeStringArray(analysis.missingSkills);
+    analysis.missingKeywords = sanitizeStringArray(analysis.missingKeywords);
+    analysis.improvements = sanitizeStringArray(analysis.improvements);
+    analysis.detectedSkills = sanitizeStringArray(analysis.detectedSkills);
+
+    if (analysis.atsCheck) {
+      if (analysis.atsCheck.keywordMatch) {
+        analysis.atsCheck.keywordMatch.matchedKeywords = sanitizeStringArray(analysis.atsCheck.keywordMatch.matchedKeywords);
+        analysis.atsCheck.keywordMatch.missingKeywords = sanitizeStringArray(analysis.atsCheck.keywordMatch.missingKeywords);
+      } else {
+        analysis.atsCheck.keywordMatch = { matchedKeywords: [], missingKeywords: [] };
+      }
+
+      if (analysis.atsCheck.formatting) {
+        analysis.atsCheck.formatting.issues = sanitizeStringArray(analysis.atsCheck.formatting.issues);
+      } else {
+        analysis.atsCheck.formatting = {
+          hasTables: false,
+          hasGraphics: false,
+          hasColumns: false,
+          usesStandardHeadings: true,
+          fontCompatibility: 'High',
+          issues: []
+        };
+      }
+
+      analysis.atsCheck.recommendations = sanitizeStringArray(analysis.atsCheck.recommendations);
+    } else {
+      analysis.atsCheck = {
+        overallScore: overallScore,
+        keywordMatch: { matchedKeywords: [], missingKeywords: [] },
+        formatting: {
+          hasTables: false,
+          hasGraphics: false,
+          hasColumns: false,
+          usesStandardHeadings: true,
+          fontCompatibility: 'High',
+          issues: []
+        },
+        recommendations: []
+      };
+    }
 
     // ✅ Sanitize roadmap array to match Mongoose schema
     if (Array.isArray(analysis.roadmap)) {
@@ -264,18 +353,19 @@ Resume Text: ${extractedText.substring(0, 4000)}`;
   }
 };
 
-// ✅ generateCoverLetter
+// ✅ generateCoverLetter - FIXED: Safe variable scoping + correct model
 export const generateCoverLetter = async (req, res) => {
   const startTime = Date.now();
   
   try {
-    const { companyName, position, jobRole, jobDescription, profile } = req.body;
+    // ✅ Define variables at top with defaults to prevent ReferenceError
+    const { companyName, position, jobRole, jobDescription, profile } = req.body || {};
+    const role = position || jobRole || 'Unknown';
     const userId = req.user?._id || req.user?.id;
-    const role = position || jobRole;
 
     if (!companyName || !role) return res.status(400).json({ success: false, error: 'Company name and position are required' });
     
-    const rateCheck = checkRateLimit(userId, 10, 60000);
+    const rateCheck = checkRateLimit(userId, parseInt(process.env.AI_RATE_LIMIT || '100'), 60000);
     if (!rateCheck.allowed) {
       return res.status(429).json({ 
         success: false, 
@@ -285,22 +375,74 @@ export const generateCoverLetter = async (req, res) => {
       });
     }
 
-    const profileText = profile ? `Applicant: ${profile.fullName || ''} | Title: ${profile.jobTitle || ''} | Skills: ${Array.isArray(profile.skills) ? profile.skills.join(', ') : profile.skills || ''}` : '';
+    // ✅ Build robust profile text from all details in profile context
+    let profileParts = [];
+    if (profile) {
+      if (profile.fullName) profileParts.push(`Applicant Name: ${profile.fullName}`);
+      if (profile.jobTitle) profileParts.push(`Current/Target Job Title: ${profile.jobTitle}`);
+      if (profile.skills) {
+        const skillsList = Array.isArray(profile.skills) ? profile.skills.join(', ') : profile.skills;
+        if (skillsList) profileParts.push(`Skills: ${skillsList}`);
+      }
+      if (profile.summary) profileParts.push(`Professional Summary: ${profile.summary}`);
+      
+      if (Array.isArray(profile.experience) && profile.experience.length > 0) {
+        const expStr = profile.experience.map(exp => 
+          `- ${exp.role || exp.title || 'Role'}: ${exp.company || 'Company'} (${exp.startDate || ''} to ${exp.endDate || 'Present'}) -> ${exp.description || ''}`
+        ).join('\n');
+        profileParts.push(`Work Experience History:\n${expStr}`);
+      }
+      
+      if (Array.isArray(profile.projects) && profile.projects.length > 0) {
+        const projStr = profile.projects.map(proj => 
+          `- ${proj.title || 'Project'}: ${proj.description || ''} ${proj.technologies ? `(Tech: ${proj.technologies})` : ''}`
+        ).join('\n');
+        profileParts.push(`Key Projects:\n${projStr}`);
+      }
+      
+      if (Array.isArray(profile.education) && profile.education.length > 0) {
+        const eduStr = profile.education.map(edu => 
+          `- ${edu.degree || 'Degree'} in ${edu.field || 'Field'} from ${edu.institution || 'School'} (${edu.year || ''})`
+        ).join('\n');
+        profileParts.push(`Education History:\n${eduStr}`);
+      }
+    }
+    const profileText = profileParts.join('\n\n');
 
-    const randomSeed = Math.random().toString(36).substring(2, 10);
+    const formattedDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const styles = [
-      'confident and achievement-focused',
-      'enthusiastic and story-driven',
-      'concise and impact-oriented',
-      'professional and detail-oriented',
-      'warm and culture-focused'
+      'achievement-focused and confident',
+      'enthusiastic and narrative-driven',
+      'impact-oriented and concise',
+      'professional and detailed',
+      'warm and culture-aligned'
     ];
     const chosenStyle = styles[Math.floor(Math.random() * styles.length)];
-    const prompt = `Write a UNIQUE professional cover letter for ${role} at ${companyName}. Style: ${chosenStyle}. ${jobDescription ? 'Job Description: ' + jobDescription : ''} ${profileText ? 'About the applicant: ' + profileText : ''} Keep it 300-400 words, plain text only. Make it feel personal and varied — avoid generic phrases. Ref: ${randomSeed}`;
+
+    const prompt = `You are a world-class professional career coach and expert copywriter.
+Write a highly personalized, premium, and unique professional cover letter for the role of "${role}" at "${companyName}".
+Use a "${chosenStyle}" tone.
+
+Here are the details about the job:
+${jobDescription ? `Job Description:\n${jobDescription}\n` : ''}
+
+Here is the applicant's profile details:
+${profileText || 'Not provided'}
+
+Current Date: ${formattedDate}
+
+CRITICAL RULES:
+1. STRUCTURE: Format the letter as a formal, professional business letter. Start with a header containing the applicant's contact details (Name, job title, and placeholder details like City, Email, Phone if missing from profile), followed by the date, the company address details, a formal "RE:" line, and a professional salutation.
+2. ABSOLUTELY NO PLACEHOLDERS: Do NOT output ANY brackets or placeholders like "[Applicant]", "[Title]", "[Previous Company]", "[X]", "[Y]", "[Z]", "[City]", or "[Phone]".
+3. CONCRETE & REALISTIC DETAILS: If any applicant details (like full name, job titles, or previous companies) or accomplishments/metrics are missing from their profile, you must dynamically generate realistic, professional, and contextually fitting names, previous employer companies, and numeric metrics (e.g. "30% increase in velocity", "led a team of 5", "managed a $50k budget") that perfectly align with a "${role}" position.
+4. TAILORED CONTENT: Connect the applicant's skills/experience directly to the requirements in the Job Description, explaining WHY they are the perfect fit for "${companyName}".
+5. NO GENERIC CLICHES: Avoid generic template phrases. Keep the body of the cover letter engaging, authentic, and limited to 250-350 words (excluding the formal header and footer).
+6. FORMAT: Output in clean plain text with standard spacing and newlines for paragraphs.`;
 
     let coverLetter;
     try {
-      const response = await generateContentWithRetry(prompt, 'gemini-1.5-flash');
+      // ✅ Use correct, widely available model name
+      const response = await generateContentWithRetry(prompt, 'gemini-2.5-flash');
       coverLetter = response.text().trim();
     } catch (aiError) {
       console.warn('Gemini API Error for Cover Letter:', aiError.message);
@@ -312,7 +454,7 @@ export const generateCoverLetter = async (req, res) => {
       userId,
       userEmail: req.user.email,
       featureUsed: 'cover-letter',
-      companyName,
+      companyName: companyName || 'Unknown',  // ✅ Safe fallback
       jobRole: role,
       success: true,
       responseTime,
@@ -329,8 +471,9 @@ export const generateCoverLetter = async (req, res) => {
       userId: req.user?._id || req.user?.id || 'anonymous',
       userEmail: req.user?.email || 'anonymous@example.com',
       featureUsed: 'cover-letter',
-      companyName: companyName || 'Unknown',
-      jobRole: role || 'Unknown',
+      // ✅ Safe fallbacks to prevent ReferenceError
+      companyName: (req.body?.companyName) || 'Unknown',
+      jobRole: (req.body?.position || req.body?.jobRole) || 'Unknown',
       success: false,
       errorMessage: error.message,
       responseTime,
@@ -352,18 +495,19 @@ export const generateCoverLetter = async (req, res) => {
   }
 };
 
-// ✅ generateInterviewQA
+// ✅ generateInterviewQA - FIXED: Safe variable scoping + correct model
 export const generateInterviewQA = async (req, res) => {
   const startTime = Date.now();
   
   try {
-    const { companyName, position, jobRole, jobDescription, profile, existingQuestions = [] } = req.body;
+    // ✅ Define variables at top with defaults to prevent ReferenceError
+    const { companyName, position, jobRole, jobDescription, profile, existingQuestions = [] } = req.body || {};
+    const role = position || jobRole || 'Unknown';
     const userId = req.user?._id || req.user?.id;
-    const role = position || jobRole;
 
     if (!companyName || !role) return res.status(400).json({ success: false, error: 'Company name and position are required' });
     
-    const rateCheck = checkRateLimit(userId, 10, 60000);
+    const rateCheck = checkRateLimit(userId, parseInt(process.env.AI_RATE_LIMIT || '100'), 60000);
     if (!rateCheck.allowed) {
       return res.status(429).json({ 
         success: false, 
@@ -384,7 +528,8 @@ Return ONLY valid JSON array: [{"question":"text","answer":"text","category":"Te
 
     let questions;
     try {
-      const response = await generateContentWithRetry(prompt, 'gemini-1.5-flash');
+      // ✅ Use correct, widely available model name
+      const response = await generateContentWithRetry(prompt, 'gemini-2.5-flash');
       const text = response.text().replace(/```json/gi, '').replace(/```/g, '').trim();
       
       try {
@@ -406,7 +551,7 @@ Return ONLY valid JSON array: [{"question":"text","answer":"text","category":"Te
       userId,
       userEmail: req.user.email,
       featureUsed: 'interview-qa',
-      companyName,
+      companyName: companyName || 'Unknown',  // ✅ Safe fallback
       jobRole: role,
       success: true,
       responseTime,
@@ -423,8 +568,9 @@ Return ONLY valid JSON array: [{"question":"text","answer":"text","category":"Te
       userId: req.user?._id || req.user?.id || 'anonymous',
       userEmail: req.user?.email || 'anonymous@example.com',
       featureUsed: 'interview-qa',
-      companyName: companyName || 'Unknown',
-      jobRole: role || 'Unknown',
+      // ✅ Safe fallbacks to prevent ReferenceError
+      companyName: (req.body?.companyName) || 'Unknown',
+      jobRole: (req.body?.position || req.body?.jobRole) || 'Unknown',
       success: false,
       errorMessage: error.message,
       responseTime,
@@ -591,8 +737,6 @@ export const emailResume = async (req, res) => {
         };
       }).filter(step => step.actionStep);
     }
-    
-    // ✅ Email sending transport and verification are handled by the unified sendEmail utility
     
     // ✅ Generate plain-text fallback
     const textContent = `

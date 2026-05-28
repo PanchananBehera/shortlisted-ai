@@ -1,4 +1,4 @@
-// src/pages/ApplicationDetail.jsx
+// src/pages/ApplicationDetail.jsx - CLEAN ERROR MESSAGES
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../utils/axios';
@@ -79,7 +79,9 @@ const ApplicationDetail = () => {
       
       setAiResult(res.data.coverLetter);
     } catch (err) {
-      setError(err.response?.data?.error || err.response?.data?.message || 'Failed to generate cover letter');
+      const errorMsg = err.response?.data?.error || 'Unable to generate cover letter. Please try again.';
+      setError(errorMsg);
+      console.error('Cover letter error:', err.message);
     } finally {
       setAiLoading(false);
     }
@@ -120,7 +122,9 @@ const ApplicationDetail = () => {
       
       setAiResult(res.data.questions);
     } catch (err) {
-      setError(err.response?.data?.error || err.response?.data?.message || 'Failed to generate interview questions');
+      const errorMsg = err.response?.data?.error || 'Unable to generate questions. Please try again.';
+      setError(errorMsg);
+      console.error('Interview QA error:', err.message);
     } finally {
       setAiLoading(false);
     }
@@ -395,7 +399,7 @@ const ApplicationDetail = () => {
             </div>
           )}
 
-          {/* AI Error */}
+          {/* AI Error - Simple & Clean */}
           {error && (
             <div className="p-4 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-2xl text-rose-700 dark:text-rose-300 text-sm text-center transition-colors animate-fade-in">
               ⚠️ {error}

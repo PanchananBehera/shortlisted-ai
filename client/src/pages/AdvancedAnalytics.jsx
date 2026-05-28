@@ -1,4 +1,4 @@
-// src/pages/AdvancedAnalytics.jsx - FINAL PRO VERSION
+// src/pages/AdvancedAnalytics.jsx - FINAL PRO VERSION WITH FIXES
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../utils/axios';
 import { useRealTime } from '../context/RealTimeContext';
@@ -12,6 +12,7 @@ const AdvancedAnalytics = () => {
   
   // ✅ Pro Tip #3: User search/filter
   const [searchQuery, setSearchQuery] = useState('');
+  const [showErrorModal, setShowErrorModal] = useState(false);
   
   // ✅ Real-time tracking integration
   const { liveStats, recentActivities, onEvent, isConnected } = useRealTime();
@@ -37,6 +38,7 @@ const AdvancedAnalytics = () => {
   useEffect(() => {
     fetchData();
   }, [timeRange]);
+
 
   const fetchData = async () => {
     setLoading(true);
@@ -89,6 +91,18 @@ const AdvancedAnalytics = () => {
     const histCount = (data?.activity || []).filter(l => l.featureUsed === 'resume-analyzer' || l.event?.includes('resume')).length;
     return liveCount + histCount;
   }, [recentActivities, data]);
+
+  // ✅ Debug: Log error rate and banner visibility
+  useEffect(() => {
+    console.log('🔍 Analytics Debug:', {
+      computedErrorRate,
+      liveStatsErrorRate: liveStats?.errorRate,
+      advancedErrorRate: data?.advanced?.errorRate,
+      shouldShowBanner: computedErrorRate > 0.1,
+      totalActivities: data?.activity?.length || 0,
+      failedActivities: data?.activity?.filter(a => a.success === false)?.length || 0
+    });
+  }, [computedErrorRate, liveStats, data]);
 
   // ✅ Pro Tip #1: Export to CSV function
   const exportToCSV = (activities, filename = 'analytics-export') => {
@@ -151,6 +165,22 @@ const AdvancedAnalytics = () => {
     console.log(`✅ Exported ${activities.length} activities to CSV`);
   };
 
+  // ✅ Memoized selector to get all failed activities across live and historical logs
+  const failedActivities = useMemo(() => {
+    const combined = [...(data?.activity || []), ...recentActivities];
+    const seen = new Set();
+    return combined
+      .filter(item => item.success === false)
+      .sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp))
+      .filter(item => {
+        const key = `${item.userId?._id || item.userId}-${item.event || item.featureUsed}-${new Date(item.createdAt || item.timestamp).getTime()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 50);
+  }, [data?.activity, recentActivities]);
+
   if (loading) return <LoadingScreen />;
   if (error) return <ErrorScreen error={error} retry={fetchData} />;
 
@@ -195,7 +225,7 @@ const AdvancedAnalytics = () => {
         </div>
 
         {/* ✅ Pro Tip #2: Anomaly Alert Banner */}
-        {computedErrorRate > 0.1 && (
+        {computedErrorRate > 0.1 ? (
           <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-center justify-between animate-pulse">
             <div className="flex items-center gap-3">
               <span className="text-2xl">⚠️</span>
@@ -207,11 +237,30 @@ const AdvancedAnalytics = () => {
                 </p>
               </div>
             </div>
-            <button 
-              onClick={() => setActiveTab('activity')}
-              className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg text-sm transition"
+             <button 
+              onClick={() => setShowErrorModal(true)}
+              className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg text-sm transition transform hover:scale-105 active:scale-95"
             >
               View Errors →
+            </button>
+          </div>
+        ) : (
+          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">✅</span>
+              <div>
+                <p className="font-semibold text-green-400">System Health Optimal</p>
+                <p className="text-sm text-slate-300">
+                  Error rate: <span className="font-bold">{(computedErrorRate * 100).toFixed(1)}%</span> 
+                  {' '}(threshold: 10%)
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setActiveTab('activity')}
+              className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-lg text-sm transition"
+            >
+              View All Activity →
             </button>
           </div>
         )}
@@ -338,6 +387,102 @@ const AdvancedAnalytics = () => {
         )}
 
       </div>
+
+      {/* Error Modal overlay window */}
+      {showErrorModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in" onClick={() => setShowErrorModal(false)}>
+          <div className="bg-slate-900 border border-red-500/30 rounded-3xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl shadow-red-500/10 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/40">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl animate-pulse">🚨</span>
+                <div>
+                  <h3 className="text-xl font-bold text-red-400">System Error Intelligence</h3>
+                  <p className="text-xs text-slate-400">Showing the latest {failedActivities.length} failed system activities</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowErrorModal(false)}
+                className="text-slate-400 hover:text-white transition p-2 hover:bg-slate-800 rounded-full"
+              >
+                ✕
+              </button>
+            </div>
+            
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              {failedActivities.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">
+                  <p className="text-green-400 text-lg font-semibold">🟢 Zero Errors Detected</p>
+                  <p className="text-sm mt-1 text-slate-500">All system services and AI pipelines are operating optimally.</p>
+                </div>
+              ) : (
+                failedActivities.map((log, idx) => {
+                  const event = log.event || log.featureUsed || 'unknown';
+                  const timestamp = log.createdAt || log.timestamp;
+                  const userName = log.userId?.name || log.userId?.email?.split('@')[0] || 'Unknown';
+                  const userEmail = log.userId?.email || '';
+
+                  return (
+                    <div key={idx} className="p-4 bg-slate-950/40 border border-red-900/20 rounded-2xl space-y-3 hover:border-red-500/20 transition duration-300">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="font-semibold text-white capitalize flex items-center gap-2">
+                            {userName}
+                            {userEmail && (
+                              <span className="text-xs text-slate-400 font-normal">({userEmail})</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-red-400 mt-1 capitalize font-medium">
+                            ❌ Failed Event: {event?.replace('-', ' ')}
+                          </div>
+                        </div>
+                        <span className="text-xs text-slate-500">
+                          {timestamp ? new Date(timestamp).toLocaleTimeString() : 'Just now'}
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <div className="text-xs font-semibold text-red-300">Detailed Exception Stack:</div>
+                        <p className="text-red-200 font-mono text-xs bg-red-950/30 p-3 rounded-lg border border-red-950/40 break-words leading-relaxed">
+                          {log.errorMessage || log.error || 'General connection or AI API error occurred.'}
+                        </p>
+                      </div>
+                      
+                      {log.metadata && Object.keys(log.metadata).length > 0 && (
+                        <details className="group">
+                          <summary className="text-xs text-slate-500 hover:text-slate-300 cursor-pointer outline-none select-none transition">
+                            View context parameters
+                          </summary>
+                          <pre className="text-slate-400 text-[10px] bg-slate-950 p-2.5 rounded-lg overflow-x-auto border border-slate-900/60 mt-1.5 font-mono">
+                            {JSON.stringify(log.metadata, null, 2)}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-slate-800 flex justify-between bg-slate-950/40">
+              <button
+                onClick={() => exportToCSV(failedActivities, 'system-errors')}
+                className="px-4 py-2 bg-red-900/20 hover:bg-red-900/30 text-red-300 border border-red-900/40 rounded-xl text-sm font-semibold transition"
+              >
+                📥 Export Errors to CSV
+              </button>
+              <button
+                onClick={() => setShowErrorModal(false)}
+                className="px-6 py-2 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 rounded-xl text-sm font-semibold text-white transition shadow-lg shadow-red-500/20"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -516,6 +661,8 @@ const HeatmapTab = ({ data, liveStats, onSelectHour }) => (
 
 // ✅ Enhanced ActivityTab with ALL Pro Tips
 const ActivityTab = ({ logs, liveActivities, isConnected, searchQuery, onSearchChange, onExport }) => {
+  const [expandedItem, setExpandedItem] = useState(null);
+
   // Merge and deduplicate activities
   const allActivities = useMemo(() => {
     const combined = [...(logs || []), ...(liveActivities || [])];
@@ -537,6 +684,14 @@ const ActivityTab = ({ logs, liveActivities, isConnected, searchQuery, onSearchC
     
     const query = searchQuery.toLowerCase();
     return allActivities.filter(item => {
+      // ✅ Allow filtering by success/failure status
+      const success = item.success !== false;
+      if (query === 'failed' || query === 'error') {
+        if (!success) return true;
+      } else if (query === 'success') {
+        if (success) return true;
+      }
+
       const userName = item.userId?.name?.toLowerCase() || '';
       const userEmail = item.userId?.email?.toLowerCase() || '';
       const event = (item.event || item.featureUsed || '').toLowerCase();
@@ -548,6 +703,16 @@ const ActivityTab = ({ logs, liveActivities, isConnected, searchQuery, onSearchC
              role.includes(query);
     });
   }, [allActivities, searchQuery]);
+
+  // ✅ Debug: Log when filter changes
+  useEffect(() => {
+    console.log('📊 Activity Filter Debug:', {
+      searchQuery,
+      totalActivities: allActivities.length,
+      filteredCount: filteredActivities.length,
+      failedCount: allActivities.filter(a => a.success === false).length
+    });
+  }, [searchQuery, allActivities, filteredActivities]);
 
   return (
     <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
@@ -564,6 +729,11 @@ const ActivityTab = ({ logs, liveActivities, isConnected, searchQuery, onSearchC
             <span className="text-slate-400">
               {filteredActivities.length} of {allActivities.length} events
             </span>
+            {searchQuery === 'failed' && (
+              <span className="px-2 py-1 bg-red-500/20 text-red-400 rounded text-xs">
+                🔴 Showing failed only
+              </span>
+            )}
           </div>
         </div>
         
@@ -605,7 +775,20 @@ const ActivityTab = ({ logs, liveActivities, isConnected, searchQuery, onSearchC
       <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
         {filteredActivities.length === 0 ? (
           <div className="text-center py-12 text-slate-400">
-            {searchQuery ? (
+            {searchQuery === 'failed' ? (
+              <div className="space-y-3">
+                <p className="text-amber-400/80 text-lg">🔍 No failed activities found</p>
+                <p className="text-sm text-slate-500">
+                  Great news! There are no errors in the current time range.
+                </p>
+                <button 
+                  onClick={() => onSearchChange('')}
+                  className="text-purple-400 hover:underline text-sm"
+                >
+                  Clear filter and show all
+                </button>
+              </div>
+            ) : searchQuery ? (
               <div>
                 <p className="mb-2">No results for "{searchQuery}"</p>
                 <button 
@@ -630,45 +813,88 @@ const ActivityTab = ({ logs, liveActivities, isConnected, searchQuery, onSearchC
             const userEmail = log.userId?.email || '';
             const isLive = log.isLive || !log._id; // Live events won't have MongoDB _id
             
+            const itemKey = `${log._id || log.id || timestamp}-${idx}`;
+            const isExpanded = expandedItem === itemKey;
+
             return (
               <div 
-                key={`${log._id || log.id || timestamp}-${idx}`} 
-                className={`flex items-center justify-between p-4 rounded-xl transition ${
+                key={itemKey} 
+                onClick={() => setExpandedItem(isExpanded ? null : itemKey)}
+                className={`p-4 rounded-xl transition cursor-pointer ${
                   isLive ? 'bg-purple-500/10 border border-purple-500/30' : 'bg-slate-800/50 hover:bg-slate-800'
-                }`}
+                } ${!success ? 'border-l-4 border-l-red-500 hover:border-l-red-400' : 'hover:border-l-4 hover:border-l-green-500'} ${isExpanded ? 'ring-2 ring-purple-500/30 bg-slate-800/80' : ''}`}
+                title="Click to view details/errors"
               >
-                <div className="flex items-center gap-4">
-                  {/* Live indicator */}
-                  {isLive && (
-                    <span className="w-2 h-2 bg-purple-400 rounded-full animate-ping" title="Live event" />
-                  )}
-                  <div className={`w-3 h-3 rounded-full ${success ? 'bg-green-500' : 'bg-red-500'}`} />
-                  <div>
-                    <div className="font-semibold text-white capitalize flex items-center gap-2">
-                      {userName}
-                      {userEmail && (
-                        <span className="text-xs text-slate-400 font-normal">({userEmail})</span>
-                      )}
-                    </div>
-                    <div className="text-sm text-slate-400">
-                      {event?.replace('-', ' ')} • {log.companyName || log.jobRole || log.metadata?.targetRole || 'General'}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {timestamp ? new Date(timestamp).toLocaleString() : 'Just now'}
-                      {isLive && <span className="ml-2 text-purple-400">• Live</span>}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    {/* Live indicator */}
+                    {isLive && (
+                      <span className="w-2 h-2 bg-purple-400 rounded-full animate-ping" title="Live event" />
+                    )}
+                    <div className={`w-3 h-3 rounded-full ${success ? 'bg-green-500' : 'bg-red-500'}`} />
+                    <div>
+                      <div className="font-semibold text-white capitalize flex items-center gap-2">
+                        {userName}
+                        {userEmail && (
+                          <span className="text-xs text-slate-400 font-normal">({userEmail})</span>
+                        )}
+                      </div>
+                      <div className="text-sm text-slate-400">
+                        {event?.replace('-', ' ')} • {log.companyName || log.jobRole || log.metadata?.targetRole || 'General'}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {timestamp ? new Date(timestamp).toLocaleString() : 'Just now'}
+                        {isLive && <span className="ml-2 text-purple-400">• Live</span>}
+                      </div>
                     </div>
                   </div>
+                  <div className="flex items-center gap-4">
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                      success ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                    }`}>
+                      {success ? '✅ Success' : '❌ Failed'}
+                    </span>
+                    <span className="text-sm text-slate-400 min-w-[80px] text-right">
+                      {log.responseTime || log.metadata?.duration ? `${log.responseTime || log.metadata.duration}ms` : '-'}
+                    </span>
+                    <span className="text-slate-500 text-xs transition duration-300 transform">
+                      {isExpanded ? '▲' : '▼'}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    success ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                  }`}>
-                    {success ? '✅ Success' : '❌ Failed'}
-                  </span>
-                  <span className="text-sm text-slate-400 min-w-[80px] text-right">
-                    {log.responseTime || log.metadata?.duration ? `${log.responseTime || log.metadata.duration}ms` : '-'}
-                  </span>
-                </div>
+
+                {/* Detailed view (error messages / metadata) */}
+                {isExpanded && (
+                  <div 
+                    className="mt-4 pt-4 border-t border-slate-700/50 text-sm space-y-3 animate-fade-in"
+                    onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inner content
+                  >
+                    {!success && (
+                      <div className="space-y-1.5">
+                        <span className="text-red-400 font-semibold flex items-center gap-1">
+                          ⚠️ Error Details:
+                        </span>
+                        <p className="text-red-200 font-mono text-xs bg-red-950/40 p-3 rounded-lg border border-red-900/30 break-words leading-relaxed">
+                          {log.errorMessage || log.error || 'Unknown server error occurred.'}
+                        </p>
+                      </div>
+                    )}
+                    
+                    {log.metadata && Object.keys(log.metadata).length > 0 && (
+                      <div className="space-y-1">
+                        <span className="text-slate-300 font-semibold">Activity Metadata:</span>
+                        <pre className="text-slate-400 text-xs bg-slate-950/50 p-3 rounded-lg overflow-x-auto border border-slate-800 font-mono">
+                          {JSON.stringify(log.metadata, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                    
+                    <div className="flex flex-wrap justify-between text-xs text-slate-500 gap-2 pt-2 border-t border-slate-800/40">
+                      <span>User Reference ID: {log.userId?._id || log.userId || 'N/A'}</span>
+                      {timestamp && <span>Log Timestamp: {new Date(timestamp).toISOString()}</span>}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })

@@ -1,49 +1,80 @@
-// src/pages/Login.jsx
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+// src/pages/Login.jsx - PRODUCTION READY
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import api from '../utils/axios';
 
 const Login = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [localError, setLocalError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const { login, isAuthenticated, error: authError, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // ✅ Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      const from = location.state?.from?.pathname || '/dashboard';
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, authLoading, navigate, location]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-    if (error) setError('');
+    if (localError || authError) {
+      setLocalError('');
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
+    
+    if (isSubmitting || authLoading) return;
+    
+    setIsSubmitting(true);
+    setLocalError('');
 
     try {
-      const res = await api.post('/auth/login', { 
-        email: formData.email, 
-        password: formData.password 
-      });
+      const result = await login(formData.email, formData.password);
       
-      const { token, ...userData } = res.data;
-      login(token, userData);
-      navigate('/dashboard');
-      
+      if (result.success) {
+        // Redirect to intended page or dashboard
+        const from = location.state?.from?.pathname || '/dashboard';
+        navigate(from, { replace: true });
+      } else {
+        setLocalError(result.error);
+      }
     } catch (err) {
-      const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Login failed. Please try again.';
-      setError(errorMsg);
+      setLocalError('An unexpected error occurred. Please try again.');
+      console.error('Login error:', err);
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
+  // Show loading state
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#fafaf8] dark:bg-slate-950">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-green-500 border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  // If already authenticated, don't show login form
+  if (isAuthenticated) {
+    return null; // Will redirect via useEffect
+  }
+
+  const displayError = localError || authError;
+
   return (
-    <div className="min-h-screen bg-[#fafaf8] dark:bg-slate-950 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 transition-colors duration-300">
+    <div className="min-h-screen bg-[#fafaf8] dark:bg-slate-950 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 transition-colors">
       <div className="max-w-md w-full">
         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm p-8 sm:p-10 border border-gray-200/50 dark:border-slate-800 transition-colors">
           
+          {/* Header */}
           <div className="text-center mb-8">
             <Link to="/" className="inline-flex items-center justify-center mb-4 group">
               <div className="w-14 h-14 bg-green-500 dark:bg-green-600 rounded-xl flex items-center justify-center shadow-md group-hover:scale-105 transition-all">
@@ -54,13 +85,16 @@ const Login = () => {
             <p className="text-gray-600 dark:text-gray-400 transition-colors">Sign in to continue your placement journey</p>
           </div>
 
-          {error && (
+          {/* Error Message */}
+          {displayError && (
             <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl text-rose-700 dark:text-rose-300 text-sm text-center transition-colors">
-              {error}
+              {displayError}
             </div>
           )}
 
+          {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Email Field */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Email Address
@@ -73,11 +107,13 @@ const Login = () => {
                 autoComplete="email"
                 value={formData.email}
                 onChange={handleChange}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                disabled={isSubmitting}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
                 placeholder="you@university.edu"
               />
             </div>
 
+            {/* Password Field */}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
                 Password
@@ -90,11 +126,13 @@ const Login = () => {
                 autoComplete="current-password"
                 value={formData.password}
                 onChange={handleChange}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                disabled={isSubmitting}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200/50 dark:border-slate-700 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
                 placeholder="••••••••"
               />
             </div>
 
+            {/* Remember & Forgot */}
             <div className="flex items-center justify-between">
               <label className="flex items-center cursor-pointer">
                 <input
@@ -108,12 +146,13 @@ const Login = () => {
               </a>
             </div>
 
+            {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={isSubmitting || authLoading}
               className="w-full bg-green-500 dark:bg-green-600 text-white py-3 px-4 rounded-full font-semibold hover:bg-green-600 dark:hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 dark:focus:ring-offset-slate-900 transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed shadow-md hover:shadow-lg flex items-center justify-center"
             >
-              {loading ? (
+              {isSubmitting ? (
                 <>
                   <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -127,6 +166,7 @@ const Login = () => {
             </button>
           </form>
 
+          {/* Register Link */}
           <div className="mt-8">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -144,6 +184,7 @@ const Login = () => {
           </div>
         </div>
 
+        {/* Footer */}
         <p className="mt-8 text-center text-sm text-gray-500 dark:text-gray-500 transition-colors">
           By signing in, you agree to our{' '}
           <a href="#" className="text-green-600 dark:text-green-400 hover:underline transition-colors">Terms</a>

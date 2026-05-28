@@ -1,5 +1,5 @@
 // src/context/RealTimeContext.jsx
-import React, { createContext, useContext, useEffect, useState, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { 
   initSocketClient, 
@@ -82,7 +82,28 @@ export const RealTimeProvider = ({ children }) => {
     };
   }, [token, user, eventListeners]);
 
-  const onEvent = (eventType, callback) => {
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  const stableTrackEvent = useCallback((event, metadata) => {
+    trackEvent(event, { ...metadata, userId: userRef.current?._id });
+  }, []);
+
+  const stableTrackPageView = useCallback((path, title) => {
+    trackPageView(path, title);
+  }, []);
+
+  const stableTrackInteraction = useCallback((feature, action, element, value, duration) => {
+    trackInteraction(feature, action, element, value, duration);
+  }, []);
+
+  const stableTrackError = useCallback((message, stack, component, severity) => {
+    trackError(message, stack, component, severity);
+  }, []);
+
+  const stableOnEvent = useCallback((eventType, callback) => {
     if (!eventListeners.has(eventType)) {
       eventListeners.set(eventType, []);
     }
@@ -92,21 +113,19 @@ export const RealTimeProvider = ({ children }) => {
       const listeners = eventListeners.get(eventType) || [];
       eventListeners.set(eventType, listeners.filter(cb => cb !== callback));
     };
-  };
+  }, [eventListeners]);
 
-  const value = {
+  const value = useMemo(() => ({
     connectionState,
     liveStats,
     recentActivities,
-    trackEvent: (event, metadata) => trackEvent(event, { ...metadata, userId: user?._id }),
-    trackPageView: (path, title) => trackPageView(path, title),
-    trackInteraction: (feature, action, element, value, duration) => 
-      trackInteraction(feature, action, element, value, duration),
-    trackError: (message, stack, component, severity) => 
-      trackError(message, stack, component, severity),
-    onEvent,
+    trackEvent: stableTrackEvent,
+    trackPageView: stableTrackPageView,
+    trackInteraction: stableTrackInteraction,
+    trackError: stableTrackError,
+    onEvent: stableOnEvent,
     isConnected: connectionState === 'connected'
-  };
+  }), [connectionState, liveStats, recentActivities, stableTrackEvent, stableTrackPageView, stableTrackInteraction, stableTrackError, stableOnEvent]);
 
   return (
     <RealTimeContext.Provider value={value}>

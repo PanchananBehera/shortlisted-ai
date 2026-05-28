@@ -1,3 +1,4 @@
+// src/context/AuthContext.jsx - PRODUCTION READY
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import api from '../utils/axios';
 
@@ -5,68 +6,136 @@ const AuthContext = createContext();
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
   return context;
 };
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [error, setError] = useState(null);
 
+  // ✅ Initialize auth on mount
   useEffect(() => {
     const initAuth = async () => {
-      const storedToken = localStorage.getItem('token');
-      if (!storedToken) {
-        setLoading(false);
-        return;
-      }
-
       try {
+        const storedToken = localStorage.getItem('token');
+        const storedUser = localStorage.getItem('user');
+        
+        if (!storedToken) {
+          setLoading(false);
+          return;
+        }
+
+        // Set token immediately for protected routes
+        setToken(storedToken);
+        if (storedUser) {
+          setUser(JSON.parse(storedUser));
+        }
+
+        // Verify token with backend
         const res = await api.get('/auth/me', {
           headers: { Authorization: `Bearer ${storedToken}` }
         });
         
         if (res.data.success && res.data.user) {
-          setUser(res.data.user);
-          localStorage.setItem('user', JSON.stringify(res.data.user));
-        } else {
-          // Invalid token
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          setUser(null);
+          const freshUser = res.data.user;
+          localStorage.setItem('user', JSON.stringify(freshUser));
+          setUser(freshUser);
         }
-      } catch {
-        // Token expired or invalid
+      } catch (err) {
+        console.warn('Auth init error:', err.message);
+        // Clear invalid token
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         setUser(null);
+        setToken(null);
       } finally {
         setLoading(false);
       }
     };
 
     initAuth();
-  }, []); // ✅ Removed token from deps to prevent infinite re-renders
+  }, []);
 
-  const login = (newToken, userData) => {
-    localStorage.setItem('token', newToken);
-    localStorage.setItem('user', JSON.stringify(userData));
-    setToken(newToken);
-    setUser(userData);
-    setLoading(false); // ✅ CRITICAL: Stops the loading loop
+  // ✅ Login function
+  const login = async (email, password) => {
+    try {
+      setError(null);
+      const res = await api.post('/auth/login', { email, password });
+      
+      if (!res.data.success) {
+        throw new Error(res.data.error || 'Login failed');
+      }
+
+      const { token: newToken, ...userData } = res.data;
+      
+      // Save to localStorage
+      localStorage.setItem('token', newToken);
+      localStorage.setItem('user', JSON.stringify(userData));
+      
+      // Update state
+      setToken(newToken);
+      setUser(userData);
+      
+      return { success: true, user: userData };
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || err.message || 'Login failed';
+      setError(errorMsg);
+      return { success: false, error: errorMsg };
+    }
   };
 
+  // ✅ Register function
+  const register = async (fullName, email, password) => {
+    try {
+      setError(null);
+      const res = await api.post('/auth/register', { fullName, email, password });
+      
+      if (!res.data.success) {
+        throw new Error(res.data.error || 'Registration failed');
+      }
+
+      const { token: newToken, ...userData } = res.data;
+      
+      // Save to localStorage
+      localStorage.setItem('token', newToken);
+      localStorage.setItem('user', JSON.stringify(userData));
+      
+      // Update state
+      setToken(newToken);
+      setUser(userData);
+      
+      return { success: true, user: userData };
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || err.message || 'Registration failed';
+      setError(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+  };
+
+  // ✅ Logout function
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setToken(null);
     setUser(null);
+    setError(null);
   };
 
-  return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, isAuthenticated: !!user }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value = {
+    user,
+    token,
+    loading,
+    error,
+    login,
+    register,
+    logout,
+    isAuthenticated: !!user && !!token,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

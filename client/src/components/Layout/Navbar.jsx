@@ -76,10 +76,17 @@ const Navbar = () => {
             <Link to="/about" className={getLinkClass('/about')}>
               🌿 About
             </Link>
-            {/* Analytics */}
-            <Link to="/admin/analytics" className={getLinkClass('/admin/analytics')}>
-              📊 Analytics
-            </Link>
+            {/* Admin Links */}
+            {user?.isAdmin && (
+              <>
+                <Link to="/admin/analytics" className={getLinkClass('/admin/analytics')}>
+                  📊 Analytics
+                </Link>
+                <Link to="/admin/errors" className={getLinkClass('/admin/errors')}>
+                  🐛 Errors
+                </Link>
+              </>
+            )}
           </div>
 
           {/* User Menu + Dark Mode Toggle */}
@@ -134,7 +141,12 @@ const Navbar = () => {
           <Link to="/history" className={getMobileClass('/history')}>📈</Link>
           {/* ✅ NEW: Mobile About Link */}
           <Link to="/about" className={getMobileClass('/about')}>🌿</Link>
-          <Link to="/admin/analytics" className={getMobileClass('/admin/analytics')}>📊</Link>
+          {user?.isAdmin && (
+            <>
+              <Link to="/admin/analytics" className={getMobileClass('/admin/analytics')}>📊</Link>
+              <Link to="/admin/errors" className={getMobileClass('/admin/errors')}>🐛</Link>
+            </>
+          )}
         </div>
       </div>
     </nav>
