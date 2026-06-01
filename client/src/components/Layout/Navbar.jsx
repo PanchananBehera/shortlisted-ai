@@ -10,8 +10,6 @@ const Navbar = () => {
   const location = useLocation();
   const { isDark, toggleDarkMode } = useDarkMode();
 
-
-
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -69,13 +67,20 @@ const Navbar = () => {
             <Link to="/ats-checker" className={getLinkClass('/ats-checker')}>
               🔍 ATS Check
             </Link>
+            
+            {/* ✅ NEW: Mock Interview Link */}
+            <Link to="/mock-interview" className={getLinkClass('/mock-interview')}>
+              🎭 Mock Interview
+            </Link>
+            
             <Link to="/history" className={getLinkClass('/history')}>
               📈 History
             </Link>
-            {/* ✅ NEW: About Link */}
+            {/* ✅ About Link */}
             <Link to="/about" className={getLinkClass('/about')}>
               🌿 About
             </Link>
+            
             {/* Admin Links */}
             {user?.isAdmin && (
               <>
@@ -97,8 +102,6 @@ const Navbar = () => {
               </span>
             )}
             
-
-
             {/* 🌙 Dark Mode Toggle Button */}
             <button
               onClick={toggleDarkMode}
@@ -138,9 +141,14 @@ const Navbar = () => {
           <Link to="/profile" className={getMobileClass('/profile')}>👤</Link>
           <Link to="/resume-analyzer" className={getMobileClass('/resume-analyzer')}>✨</Link>
           <Link to="/ats-checker" className={getMobileClass('/ats-checker')}>🔍</Link>
+          
+          {/* ✅ NEW: Mobile Mock Interview Link */}
+          <Link to="/mock-interview" className={getMobileClass('/mock-interview')}>🎭</Link>
+          
           <Link to="/history" className={getMobileClass('/history')}>📈</Link>
-          {/* ✅ NEW: Mobile About Link */}
+          {/* ✅ Mobile About Link */}
           <Link to="/about" className={getMobileClass('/about')}>🌿</Link>
+          
           {user?.isAdmin && (
             <>
               <Link to="/admin/analytics" className={getMobileClass('/admin/analytics')}>📊</Link>

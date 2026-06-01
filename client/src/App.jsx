@@ -1,4 +1,4 @@
-// src/App.jsx - PRODUCTION READY with Real-Time Tracking
+// src/App.jsx - PRODUCTION READY with AI Avatar Mock Interview
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
@@ -26,6 +26,8 @@ import AboutUs from './pages/AboutUs';
 import AdvancedAnalytics from './pages/AdvancedAnalytics';
 import ErrorReports from './pages/ErrorReports';
 
+// ✅ NEW: AI Avatar Mock Interview
+import MockInterview from './pages/MockInterview';
 
 function App() {
   return (
@@ -107,6 +109,15 @@ function App() {
               </ProtectedRoute>
             } />
 
+            {/* ✅ NEW: AI Avatar Mock Interview */}
+            <Route path="/mock-interview" element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <MockInterview />
+                </MainLayout>
+              </ProtectedRoute>
+            } />
+
             {/* History */}
             <Route path="/history" element={
               <ProtectedRoute>
@@ -133,7 +144,6 @@ function App() {
                 </MainLayout>
               </ProtectedRoute>
             } />
-
 
             {/* 404 */}
             <Route path="*" element={

@@ -25,8 +25,8 @@ const checkRateLimit = (userId, limit = parseInt(process.env.AI_RATE_LIMIT || '1
 };
 
 // ✅ API Key Rotation & Robust Self-Healing Fallback Logic
-let currentKeyIndex = 0;
-const generateContentWithRetry = async (prompt, modelName = 'gemini-2.5-flash', retries = 0) => {
+export let currentKeyIndex = 0;
+export const generateContentWithRetry = async (prompt, modelName = 'gemini-2.5-flash', retries = 0) => {
   const keys = (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(k => k);
   if (keys.length === 0) throw new Error("GEMINI_API_KEY is not set in .env");
   

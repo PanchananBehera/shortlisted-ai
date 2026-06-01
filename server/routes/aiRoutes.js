@@ -12,6 +12,12 @@ import {
   emailResume,
   exportATSReport 
 } from '../controllers/aiController.js';
+import { 
+  processInterviewTurn, 
+  evaluateInterview, 
+  getInterviewHistory, 
+  getInterviewDetail 
+} from '../controllers/interviewController.js';
 
 const router = express.Router();
 
@@ -41,6 +47,12 @@ const upload = multer({
 // ✅ AI ASSISTANT ROUTES
 router.post('/cover-letter', protect, generateCoverLetter);
 router.post('/interview-qa', protect, generateInterviewQA);
+
+// ✅ INTERACTIVE MOCK INTERVIEW ROUTES
+router.post('/interview/turn', protect, processInterviewTurn);
+router.post('/interview/evaluate', protect, evaluateInterview);
+router.get('/interview/history', protect, getInterviewHistory);
+router.get('/interview/history/:id', protect, getInterviewDetail);
 
 // ✅ RESUME ANALYSIS ROUTES
 router.post('/analyze-resume', protect, upload.single('resume'), analyzeResume);
