@@ -1,44 +1,59 @@
-// src/pages/AdvancedAnalytics.jsx - FINAL PRO VERSION WITH FIXES
+// src/pages/AdvancedAnalytics.jsx - PHASE 3 + EMAIL FEATURE
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../utils/axios';
 import { useRealTime } from '../context/RealTimeContext';
+import { useAuth } from '../context/AuthContext';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  AreaChart, Area, BarChart, Bar, Legend, PieChart, Pie, Cell 
+} from 'recharts';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const AdvancedAnalytics = () => {
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [timeRange, setTimeRange] = useState(30);
   const [activeTab, setActiveTab] = useState('overview');
-  
-  // ✅ Pro Tip #3: User search/filter
   const [searchQuery, setSearchQuery] = useState('');
   const [showErrorModal, setShowErrorModal] = useState(false);
   
-  // ✅ Real-time tracking integration
+  // Interview History
+  const [interviewHistory, setInterviewHistory] = useState([]);
+  const [interviewLoading, setInterviewLoading] = useState(false);
+  
+  // Session Comparison State
+  const [selectedSessions, setSelectedSessions] = useState([]);
+  const [showCompareModal, setShowCompareModal] = useState(false);
+  
+  // ✅ NEW: Email Feature State
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [emailLoading, setEmailLoading] = useState(false);
+
   const { liveStats, recentActivities, onEvent, isConnected } = useRealTime();
   const liveDataRef = useRef(null);
 
-  // ✅ Listen for live analytics updates
+  // Listen for live updates
   useEffect(() => {
     const cleanup = onEvent('live-update', (update) => {
       if (update.event?.includes('feature:')) {
         liveDataRef.current = update;
         if (activeTab === 'activity') {
-          setData(prev => prev ? {
-            ...prev,
-            activity: [update, ...(prev.activity || [])].slice(0, 50)
-          } : prev);
+          setData(prev => prev ? { ...prev, activity: [update, ...(prev.activity || [])].slice(0, 50) } : prev);
         }
       }
     });
     return cleanup;
   }, [onEvent, activeTab]);
 
-  // ✅ Fetch historical data
+  // Fetch data
   useEffect(() => {
     fetchData();
-  }, [timeRange]);
-
+    if (user?._id) fetchInterviewHistory();
+  }, [timeRange, user]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -48,7 +63,6 @@ const AdvancedAnalytics = () => {
         api.get(`/admin/usage/advanced?days=${timeRange}`),
         api.get('/admin/usage/activity-stream?limit=20')
       ]);
-      
       setData({
         advanced: advancedRes.data,
         activity: activityRes.data.logs,
@@ -62,7 +76,88 @@ const AdvancedAnalytics = () => {
     }
   };
 
-  // ✅ Computed live stats fallback (ensures dashboard is immediately alive upon load!)
+  const fetchInterviewHistory = async () => {
+    if (!user?._id) return;
+    setInterviewLoading(true);
+    try {
+      const res = await api.get('/ai/interview/history');
+      if (res.data.success) setInterviewHistory(res.data.sessions);
+    } catch (err) {
+      console.error('Failed to fetch interview history:', err);
+    } finally {
+      setInterviewLoading(false);
+    }
+  };
+
+  // 📈 CHART DATA PREPARATION
+  const chartData = useMemo(() => {
+    if (!interviewHistory.length) return [];
+    return [...interviewHistory]
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .map((session, idx) => ({
+        name: `Session ${idx + 1}`,
+        score: session.overallScore || 0,
+        date: new Date(session.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        role: session.targetRole || 'Unknown'
+      }));
+  }, [interviewHistory]);
+
+  // 📊 PERFORMANCE METRICS
+  const performanceMetrics = useMemo(() => {
+    if (!interviewHistory.length) return null;
+    const scores = interviewHistory.map(s => s.overallScore || 0);
+    const avgScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+    const bestScore = Math.max(...scores);
+    const worstScore = Math.min(...scores);
+    const totalSessions = interviewHistory.length;
+    const recent = scores.slice(-3);
+    const older = scores.slice(0, 3);
+    const recentAvg = recent.length ? recent.reduce((a, b) => a + b, 0) / recent.length : 0;
+    const olderAvg = older.length ? older.reduce((a, b) => a + b, 0) / older.length : 0;
+    const trend = recentAvg > olderAvg ? 'improving' : recentAvg < olderAvg ? 'declining' : 'stable';
+    const trendPercent = olderAvg ? Math.round(((recentAvg - olderAvg) / olderAvg) * 100) : 0;
+    return { avgScore, bestScore, worstScore, totalSessions, trend, trendPercent };
+  }, [interviewHistory]);
+
+  // ✅ Skills Breakdown Data for Pie Chart
+  const skillsData = useMemo(() => {
+    if (!interviewHistory.length) return [];
+    const allStrengths = interviewHistory.flatMap(s => s.strengths || []);
+    const allWeaknesses = interviewHistory.flatMap(s => s.weaknesses || []);
+    
+    const categories = {
+      'Communication': 0,
+      'Technical': 0,
+      'Problem-Solving': 0,
+      'Leadership': 0,
+      'Other': 0
+    };
+    
+    [...allStrengths, ...allWeaknesses].forEach(skill => {
+      const lower = skill.toLowerCase();
+      if (lower.includes('communicat') || lower.includes('present') || lower.includes('explain')) {
+        categories['Communication']++;
+      } else if (lower.includes('technic') || lower.includes('code') || lower.includes('react') || lower.includes('python')) {
+        categories['Technical']++;
+      } else if (lower.includes('problem') || lower.includes('solve') || lower.includes('analyz')) {
+        categories['Problem-Solving']++;
+      } else if (lower.includes('lead') || lower.includes('team') || lower.includes('manag')) {
+        categories['Leadership']++;
+      } else {
+        categories['Other']++;
+      }
+    });
+    
+    return Object.entries(categories)
+      .filter(([_, count]) => count > 0)
+      .map(([name, value], idx) => ({
+        name,
+        value,
+        color: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#6b7280'][idx % 5]
+      }));
+  }, [interviewHistory]);
+
+  // Computed stats
   const computedErrorRate = useMemo(() => {
     if (isConnected && liveStats.errorRate > 0) return liveStats.errorRate;
     if (data?.advanced?.errorRate !== undefined) return data.advanced.errorRate;
@@ -74,15 +169,13 @@ const AdvancedAnalytics = () => {
   const computedActiveUsers = useMemo(() => {
     if (isConnected && liveStats.activeUsers > 0) return liveStats.activeUsers;
     const logs = data?.activity || [];
-    const unique = new Set(logs.map(l => l.userId?._id || l.userId || 'unknown')).size;
-    return unique || 1;
+    return new Set(logs.map(l => l.userId?._id || l.userId || 'unknown')).size || 1;
   }, [liveStats.activeUsers, data, isConnected]);
 
   const computedEventsPerMin = useMemo(() => {
     if (isConnected && liveStats.eventsPerMinute > 0) return liveStats.eventsPerMinute;
     const logs = data?.activity || [];
-    const oneHourAgo = Date.now() - 3600000;
-    const recent = logs.filter(l => new Date(l.createdAt || l.timestamp).getTime() > oneHourAgo).length;
+    const recent = logs.filter(l => new Date(l.createdAt || l.timestamp).getTime() > Date.now() - 3600000).length;
     return Math.round(recent / 60) || 1;
   }, [liveStats.eventsPerMinute, data, isConnected]);
 
@@ -92,39 +185,109 @@ const AdvancedAnalytics = () => {
     return liveCount + histCount;
   }, [recentActivities, data]);
 
-  // ✅ Debug: Log error rate and banner visibility
-  useEffect(() => {
-    console.log('🔍 Analytics Debug:', {
-      computedErrorRate,
-      liveStatsErrorRate: liveStats?.errorRate,
-      advancedErrorRate: data?.advanced?.errorRate,
-      shouldShowBanner: computedErrorRate > 0.1,
-      totalActivities: data?.activity?.length || 0,
-      failedActivities: data?.activity?.filter(a => a.success === false)?.length || 0
-    });
-  }, [computedErrorRate, liveStats, data]);
+  const failedActivities = useMemo(() => {
+    const combined = [...(data?.activity || []), ...recentActivities];
+    const seen = new Set();
+    return combined.filter(item => item.success === false)
+      .sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp))
+      .filter(item => {
+        const key = `${item.userId?._id || item.userId}-${item.event || item.featureUsed}-${new Date(item.createdAt || item.timestamp).getTime()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).slice(0, 50);
+  }, [data?.activity, recentActivities]);
 
-  // ✅ Pro Tip #1: Export to CSV function
-  const exportToCSV = (activities, filename = 'analytics-export') => {
-    if (!activities || activities.length === 0) {
-      alert('No data to export');
-      return;
-    }
-
-    // Define CSV headers
-    const headers = [
-      'Timestamp',
-      'User',
-      'Email',
-      'Event',
-      'Feature',
-      'Status',
-      'Response Time (ms)',
-      'Target Role',
-      'Company'
+  // ✅ Export to PDF Function
+  const exportToPDF = () => {
+    if (!interviewHistory.length) return alert('No interview data to export');
+    
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text('Mock Interview Performance Report', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 28);
+    doc.text(`User: ${user?.name || user?.email || 'Anonymous'}`, 14, 33);
+    
+    doc.setFontSize(14);
+    doc.text('Performance Summary', 14, 45);
+    doc.setFontSize(10);
+    
+    const summaryData = [
+      ['Total Sessions', performanceMetrics?.totalSessions || 0],
+      ['Average Score', `${performanceMetrics?.avgScore || 0}%`],
+      ['Best Score', `${performanceMetrics?.bestScore || 0}%`],
+      ['Trend', `${performanceMetrics?.trendPercent || 0}% ${performanceMetrics?.trend}`]
     ];
+    
+    autoTable(doc, {
+      startY: 50,
+      head: [['Metric', 'Value']],
+      body: summaryData,
+      theme: 'grid',
+      styles: { fontSize: 9 }
+    });
+    
+    doc.addPage();
+    doc.setFontSize(14);
+    doc.text('Session Details', 14, 20);
+    
+    const sessionData = interviewHistory.map(s => [
+      new Date(s.createdAt).toLocaleDateString(),
+      s.targetRole,
+      s.dreamCompany || '-',
+      `${s.overallScore}%`,
+      s.duration || '-'
+    ]);
+    
+    autoTable(doc, {
+      startY: 30,
+      head: [['Date', 'Role', 'Company', 'Score', 'Duration']],
+      body: sessionData,
+      theme: 'striped',
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [139, 92, 246] }
+    });
+    
+    doc.save(`interview-report-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
 
-    // Format rows
+  // ✅ NEW: Email Report Handler
+  const handleSendEmail = async () => {
+    if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+      return alert('Please enter a valid email address');
+    }
+    setEmailLoading(true);
+    try {
+      await api.post('/ai/interview/email-report', { recipientEmail });
+      alert('✅ Report sent successfully! Check your inbox.');
+      setShowEmailModal(false);
+      setRecipientEmail('');
+    } catch (err) {
+      console.error(err);
+      alert('❌ Failed to send email. Please try again.');
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  // Session Comparison Handlers
+  const toggleSessionSelection = (session) => {
+    setSelectedSessions(prev => {
+      const exists = prev.find(s => s._id === session._id);
+      if (exists) {
+        return prev.filter(s => s._id !== session._id);
+      } else if (prev.length < 2) {
+        return [...prev, session];
+      } else {
+        return [prev[1], session];
+      }
+    });
+  };
+
+  const exportToCSV = (activities, filename = 'analytics-export') => {
+    if (!activities?.length) return alert('No data to export');
+    const headers = ['Timestamp', 'User', 'Email', 'Event', 'Feature', 'Status', 'Response Time (ms)', 'Target Role', 'Company'];
     const rows = activities.map(item => {
       const event = item.event || item.featureUsed || 'unknown';
       const success = item.success !== false;
@@ -134,52 +297,20 @@ const AdvancedAnalytics = () => {
       const responseTime = item.responseTime || item.metadata?.duration || '-';
       const targetRole = item.companyName || item.jobRole || item.metadata?.targetRole || '-';
       const company = item.metadata?.companyName || '-';
-
-      return [
-        timestamp ? new Date(timestamp).toISOString() : '-',
-        user,
-        email,
-        event,
-        event.replace('-', ' '),
-        success ? 'Success' : 'Failed',
-        responseTime,
-        targetRole,
-        company
-      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(',');
+      return [timestamp ? new Date(timestamp).toISOString() : '-', user, email, event, event.replace('-', ' '), success ? 'Success' : 'Failed', responseTime, targetRole, company]
+        .map(field => `"${String(field).replace(/"/g, '""')}"`).join(',');
     });
-
-    // Create CSV content
     const csvContent = [headers.join(','), ...rows].join('\n');
-    
-    // Create download link
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `${headers.join(',') ? filename : 'export'}-${new Date().toISOString().split('T')[0]}.csv`);
+    link.download = `${filename}-${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    
-    console.log(`✅ Exported ${activities.length} activities to CSV`);
   };
-
-  // ✅ Memoized selector to get all failed activities across live and historical logs
-  const failedActivities = useMemo(() => {
-    const combined = [...(data?.activity || []), ...recentActivities];
-    const seen = new Set();
-    return combined
-      .filter(item => item.success === false)
-      .sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp))
-      .filter(item => {
-        const key = `${item.userId?._id || item.userId}-${item.event || item.featureUsed}-${new Date(item.createdAt || item.timestamp).getTime()}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .slice(0, 50);
-  }, [data?.activity, recentActivities]);
 
   if (loading) return <LoadingScreen />;
   if (error) return <ErrorScreen error={error} retry={fetchData} />;
@@ -191,295 +322,296 @@ const AdvancedAnalytics = () => {
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-              🎯 Advanced User Intelligence
-            </h1>
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">🎯 Advanced User Intelligence</h1>
             <p className="text-slate-400 mt-2 flex items-center gap-2">
               AI-powered insights and real-time user behavior analytics
-              <span className={`px-2 py-1 text-xs rounded-full ${
-                isConnected 
-                  ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
-                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-              }`}>
+              <span className={`px-2 py-1 text-xs rounded-full ${isConnected ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
                 {isConnected ? '🟢 Live' : '🟡 Syncing...'}
               </span>
             </p>
           </div>
           <div className="flex gap-3">
-            <select
-              value={timeRange}
-              onChange={(e) => setTimeRange(Number(e.target.value))}
-              className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-purple-500"
-            >
+            <select value={timeRange} onChange={(e) => setTimeRange(Number(e.target.value))} className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-purple-500">
               <option value={7}>Last 7 days</option>
               <option value={30}>Last 30 days</option>
               <option value={90}>Last 90 days</option>
             </select>
-            <button
-              onClick={fetchData}
-              className="px-5 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-xl font-medium transition shadow-lg shadow-purple-500/30"
-            >
-              🔄 Refresh
-            </button>
+            <button onClick={fetchData} className="px-5 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-xl font-medium transition shadow-lg shadow-purple-500/30">🔄 Refresh</button>
           </div>
         </div>
 
-        {/* ✅ Pro Tip #2: Anomaly Alert Banner */}
+        {/* Alert Banner */}
         {computedErrorRate > 0.1 ? (
           <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 flex items-center justify-between animate-pulse">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">⚠️</span>
-              <div>
-                <p className="font-semibold text-red-400">High Error Rate Detected</p>
-                <p className="text-sm text-slate-300">
-                  Current error rate: <span className="font-bold">{(computedErrorRate * 100).toFixed(1)}%</span> 
-                  {' '}(threshold: 10%)
-                </p>
-              </div>
-            </div>
-             <button 
-              onClick={() => setShowErrorModal(true)}
-              className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg text-sm transition transform hover:scale-105 active:scale-95"
-            >
-              View Errors →
-            </button>
+            <div className="flex items-center gap-3"><span className="text-2xl">⚠️</span><div><p className="font-semibold text-red-400">High Error Rate Detected</p><p className="text-sm text-slate-300">Current error rate: <span className="font-bold">{(computedErrorRate * 100).toFixed(1)}%</span> (threshold: 10%)</p></div></div>
+            <button onClick={() => setShowErrorModal(true)} className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg text-sm transition">View Errors →</button>
           </div>
         ) : (
           <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">✅</span>
-              <div>
-                <p className="font-semibold text-green-400">System Health Optimal</p>
-                <p className="text-sm text-slate-300">
-                  Error rate: <span className="font-bold">{(computedErrorRate * 100).toFixed(1)}%</span> 
-                  {' '}(threshold: 10%)
-                </p>
-              </div>
-            </div>
-            <button 
-              onClick={() => setActiveTab('activity')}
-              className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-lg text-sm transition"
-            >
-              View All Activity →
-            </button>
+            <div className="flex items-center gap-3"><span className="text-2xl">✅</span><div><p className="font-semibold text-green-400">System Health Optimal</p><p className="text-sm text-slate-300">Error rate: <span className="font-bold">{(computedErrorRate * 100).toFixed(1)}%</span> (threshold: 10%)</p></div></div>
+            <button onClick={() => setActiveTab('activity')} className="px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-lg text-sm transition">View All Activity →</button>
           </div>
         )}
 
-        {/* Live Stats Bar */}
+        {/* Live Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-            <div className="text-2xl font-bold text-green-400">{computedActiveUsers}</div>
-            <div className="text-xs text-slate-400">Active Now</div>
-          </div>
-          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-            <div className="text-2xl font-bold text-purple-400">{computedEventsPerMin}</div>
-            <div className="text-xs text-slate-400">Events/Min</div>
-          </div>
-          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-            <div className="text-2xl font-bold text-blue-400">
-              {computedAiAnalyses}
-            </div>
-            <div className="text-xs text-slate-400">AI Analyses</div>
-          </div>
-          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-            <div className="text-2xl font-bold text-amber-400">
-              {(computedErrorRate * 100).toFixed(1)}%
-            </div>
-            <div className="text-xs text-slate-400">Error Rate</div>
-          </div>
+          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl"><div className="text-2xl font-bold text-green-400">{computedActiveUsers}</div><div className="text-xs text-slate-400">Active Now</div></div>
+          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl"><div className="text-2xl font-bold text-purple-400">{computedEventsPerMin}</div><div className="text-xs text-slate-400">Events/Min</div></div>
+          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl"><div className="text-2xl font-bold text-blue-400">{computedAiAnalyses}</div><div className="text-xs text-slate-400">AI Analyses</div></div>
+          <div className="bg-slate-900/50 border border-slate-800 p-4 rounded-xl"><div className="text-2xl font-bold text-amber-400">{(computedErrorRate * 100).toFixed(1)}%</div><div className="text-xs text-slate-400">Error Rate</div></div>
         </div>
 
-        {/* AI Insights Cards */}
+        {/* AI Insights */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {(data?.advanced?.insights || []).map((insight, idx) => (
-            <InsightCard key={idx} insight={insight} />
-          ))}
+          {(data?.advanced?.insights || []).map((insight, idx) => <InsightCard key={idx} insight={insight} />)}
         </div>
 
-        {/* Key Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <MetricCard
-            icon="👥"
-            label="Total Users"
-            value={data?.advanced?.totalUsers || 0}
-            gradient="from-blue-500 to-cyan-500"
-          />
-          <MetricCard
-            icon="⭐"
-            label="Avg Engagement"
-            value={`${data?.advanced?.avgEngagementScore || 0}/100`}
-            gradient="from-purple-500 to-pink-500"
-          />
-          <MetricCard
-            icon="🔥"
-            label="Power Users"
-            value={data?.advanced?.topUsers?.filter(u => u.engagementScore >= 70)?.length || 0}
-            gradient="from-orange-500 to-red-500"
-          />
-          <MetricCard
-            icon="📊"
-            label="Features Used"
-            value={data?.advanced?.featureAdoption?.[3]?.count || 0}
-            gradient="from-green-500 to-emerald-500"
-          />
+        {/* PHASE 3 + EMAIL: ENHANCED INTERVIEW ANALYTICS */}
+        <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="text-xl font-bold flex items-center gap-2">📊 Interview Performance Analytics</h3>
+            <div className="flex gap-2">
+              <button onClick={fetchInterviewHistory} className="text-xs text-purple-400 hover:text-purple-300 transition">🔄 Refresh</button>
+              {interviewHistory.length > 0 && (
+                <>
+                  <button onClick={exportToPDF} className="text-xs text-emerald-400 hover:text-emerald-300 transition">📄 Export PDF</button>
+                  {/* ✅ NEW: Email Button */}
+                  <button onClick={() => setShowEmailModal(true)} className="text-xs text-blue-400 hover:text-blue-300 transition">📧 Email Report</button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {interviewLoading ? (
+            <div className="flex items-center gap-2 text-slate-400 py-8 justify-center"><div className="w-4 h-4 border-2 border-slate-600 border-t-purple-500 rounded-full animate-spin" /> Loading analytics...</div>
+          ) : interviewHistory.length > 0 ? (
+            <>
+              {/* Metrics Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <MetricCard icon="" label="Average Score" value={`${performanceMetrics?.avgScore || 0}%`} gradient="from-green-500 to-emerald-500" />
+                <MetricCard icon="🏆" label="Best Score" value={`${performanceMetrics?.bestScore || 0}%`} gradient="from-purple-500 to-pink-500" />
+                <MetricCard icon="🎯" label="Total Sessions" value={performanceMetrics?.totalSessions || 0} gradient="from-blue-500 to-cyan-500" />
+                <MetricCard icon={performanceMetrics?.trend === 'improving' ? '📈' : performanceMetrics?.trend === 'declining' ? '📉' : '➡️'} label="Trend" value={`${performanceMetrics?.trendPercent || 0}% ${performanceMetrics?.trend}`} gradient={performanceMetrics?.trend === 'improving' ? 'from-green-500 to-emerald-500' : performanceMetrics?.trend === 'declining' ? 'from-red-500 to-orange-500' : 'from-gray-500 to-slate-500'} />
+              </div>
+
+              {/* Charts Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Score Trend Chart */}
+                <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+                  <h4 className="text-sm font-semibold text-slate-300 mb-4">📈 Score Progression</h4>
+                  <div className="h-48 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData}>
+                        <defs>
+                          <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={10} />
+                        <YAxis stroke="#94a3b8" fontSize={10} domain={[0, 100]} />
+                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', fontSize: '12px' }} />
+                        <Area type="monotone" dataKey="score" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorScore)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Skills Breakdown Pie Chart */}
+                <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+                  <h4 className="text-sm font-semibold text-slate-300 mb-4">🎯 Skills Breakdown</h4>
+                  <div className="h-48 w-full flex items-center justify-center">
+                    {skillsData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={skillsData} cx="50%" cy="50%" innerRadius={40} outerRadius={60} paddingAngle={2} dataKey="value">
+                            {skillsData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', fontSize: '12px' }} />
+                          <Legend verticalAlign="bottom" height={36} fontSize={10} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <p className="text-slate-500 text-sm">Complete more interviews to see skills breakdown</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Session Comparison Selection */}
+              {selectedSessions.length > 0 && (
+                <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">🔄</span>
+                    <div>
+                      <p className="font-semibold text-purple-300">Comparing {selectedSessions.length} session(s)</p>
+                      <p className="text-sm text-slate-400">
+                        {selectedSessions.map(s => s.targetRole).join(' vs ')}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setShowCompareModal(true)}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition"
+                  >
+                    View Comparison →
+                  </button>
+                </div>
+              )}
+
+              {/* Session History List with Selection */}
+              <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                {interviewHistory.map((session, idx) => {
+                  const isSelected = selectedSessions.find(s => s._id === session._id);
+                  return (
+                    <div 
+                      key={idx} 
+                      onClick={() => toggleSessionSelection(session)}
+                      className={`flex items-center justify-between p-3 rounded-lg transition cursor-pointer group border ${
+                        isSelected 
+                          ? 'bg-purple-500/20 border-purple-500/50 ring-2 ring-purple-500/30' 
+                          : 'bg-slate-800/50 border-slate-700 hover:bg-slate-800'
+                      }`}
+                      title={`Click to ${isSelected ? 'deselect' : 'select'} for comparison`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {/* Selection Checkbox */}
+                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition ${
+                          isSelected ? 'bg-purple-500 border-purple-400' : 'border-slate-600 group-hover:border-purple-400'
+                        }`}>
+                          {isSelected && <span className="text-xs text-white">✓</span>}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-white truncate flex items-center gap-2">
+                            {session.targetRole}{session.dreamCompany && <span className="text-xs text-slate-500">@ {session.dreamCompany}</span>}
+                          </p>
+                          <p className="text-xs text-slate-400">{new Date(session.createdAt).toLocaleDateString()} • {session.experienceLevel}</p>
+                        </div>
+                      </div>
+                      <div className="text-right ml-3">
+                        <span className={`text-lg font-bold ${session.overallScore >= 80 ? 'text-green-400' : session.overallScore >= 60 ? 'text-amber-400' : 'text-red-400'}`}>{session.overallScore}%</span>
+                        <p className="text-xs text-slate-500">{session.questionCount} Qs • {session.duration}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-8 text-slate-400">
+              <p className="text-lg">🎭 No interview sessions yet</p>
+              <p className="text-sm mt-1">Complete your first mock interview to see performance analytics!</p>
+              <button onClick={() => window.location.href = '/mock-interview'} className="mt-3 text-xs text-purple-400 hover:text-purple-300 underline">Start practicing →</button>
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
         <div className="flex gap-2 border-b border-slate-800">
           {['overview', 'journey', 'heatmap', 'activity'].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-5 py-3 font-medium capitalize transition ${
-                activeTab === tab
-                  ? 'text-purple-400 border-b-2 border-purple-500'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {tab}
-            </button>
+            <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 py-3 font-medium capitalize transition ${activeTab === tab ? 'text-purple-400 border-b-2 border-purple-500' : 'text-slate-400 hover:text-white'}`}>{tab}</button>
           ))}
         </div>
 
         {/* Tab Content */}
-        {activeTab === 'overview' && (
-          <OverviewTab 
-            data={data?.advanced} 
-            liveStats={liveStats} 
-            onSelectUser={(email) => {
-              setSearchQuery(email);
-              setActiveTab('activity');
-            }}
-            onSelectStage={(stage) => {
-              setSearchQuery(stage);
-              setActiveTab('activity');
-            }}
-          />
-        )}
-        {activeTab === 'journey' && (
-          <JourneyTab 
-            data={data?.advanced} 
-            onSelectUser={(email) => {
-              setSearchQuery(email);
-              setActiveTab('activity');
-            }}
-          />
-        )}
-        {activeTab === 'heatmap' && (
-          <HeatmapTab 
-            data={data?.advanced} 
-            liveStats={liveStats} 
-            onSelectHour={(hour) => {
-              setSearchQuery(`${hour}:00`);
-              setActiveTab('activity');
-            }}
-          />
-        )}
-        {activeTab === 'activity' && (
-          <ActivityTab 
-            logs={data?.activity} 
-            liveActivities={recentActivities} 
-            isConnected={isConnected}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            onExport={exportToCSV}
-          />
-        )}
+        {activeTab === 'overview' && <OverviewTab data={data?.advanced} liveStats={liveStats} onSelectUser={(e) => { setSearchQuery(e); setActiveTab('activity'); }} onSelectStage={(s) => { setSearchQuery(s); setActiveTab('activity'); }} />}
+        {activeTab === 'journey' && <JourneyTab data={data?.advanced} onSelectUser={(e) => { setSearchQuery(e); setActiveTab('activity'); }} />}
+        {activeTab === 'heatmap' && <HeatmapTab data={data?.advanced} liveStats={liveStats} onSelectHour={(h) => { setSearchQuery(`${h}:00`); setActiveTab('activity'); }} />}
+        {activeTab === 'activity' && <ActivityTab logs={data?.activity} liveActivities={recentActivities} isConnected={isConnected} searchQuery={searchQuery} onSearchChange={setSearchQuery} onExport={exportToCSV} />}
 
       </div>
 
-      {/* Error Modal overlay window */}
-      {showErrorModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in" onClick={() => setShowErrorModal(false)}>
-          <div className="bg-slate-900 border border-red-500/30 rounded-3xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl shadow-red-500/10 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            {/* Modal Header */}
-            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/40">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl animate-pulse">🚨</span>
-                <div>
-                  <h3 className="text-xl font-bold text-red-400">System Error Intelligence</h3>
-                  <p className="text-xs text-slate-400">Showing the latest {failedActivities.length} failed system activities</p>
-                </div>
-              </div>
+      {/* ✅ NEW: Email Report Modal */}
+      {showEmailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm" onClick={() => setShowEmailModal(false)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">📧 Email Interview Report</h3>
+            <p className="text-sm text-slate-400 mb-4">Send a formatted performance summary to any email address.</p>
+            
+            <input 
+              type="email" 
+              placeholder="e.g., recruiter@company.com" 
+              value={recipientEmail}
+              onChange={(e) => setRecipientEmail(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+            
+            <div className="flex gap-3">
               <button 
-                onClick={() => setShowErrorModal(false)}
-                className="text-slate-400 hover:text-white transition p-2 hover:bg-slate-800 rounded-full"
+                onClick={() => setShowEmailModal(false)} 
+                className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-lg transition"
               >
-                ✕
+                Cancel
+              </button>
+              <button 
+                onClick={handleSendEmail} 
+                disabled={emailLoading || !recipientEmail} 
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-50 rounded-lg transition font-medium"
+              >
+                {emailLoading ? 'Sending...' : 'Send Report'}
               </button>
             </div>
             
-            {/* Modal Content */}
-            <div className="p-6 overflow-y-auto space-y-4 flex-1">
-              {failedActivities.length === 0 ? (
-                <div className="text-center py-12 text-slate-400">
-                  <p className="text-green-400 text-lg font-semibold">🟢 Zero Errors Detected</p>
-                  <p className="text-sm mt-1 text-slate-500">All system services and AI pipelines are operating optimally.</p>
-                </div>
-              ) : (
-                failedActivities.map((log, idx) => {
-                  const event = log.event || log.featureUsed || 'unknown';
-                  const timestamp = log.createdAt || log.timestamp;
-                  const userName = log.userId?.name || log.userId?.email?.split('@')[0] || 'Unknown';
-                  const userEmail = log.userId?.email || '';
+            <p className="text-xs text-slate-500 mt-3 text-center">🔒 Securely sent via Shortlisted AI backend</p>
+          </div>
+        </div>
+      )}
 
-                  return (
-                    <div key={idx} className="p-4 bg-slate-950/40 border border-red-900/20 rounded-2xl space-y-3 hover:border-red-500/20 transition duration-300">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="font-semibold text-white capitalize flex items-center gap-2">
-                            {userName}
-                            {userEmail && (
-                              <span className="text-xs text-slate-400 font-normal">({userEmail})</span>
-                            )}
-                          </div>
-                          <div className="text-xs text-red-400 mt-1 capitalize font-medium">
-                            ❌ Failed Event: {event?.replace('-', ' ')}
-                          </div>
-                        </div>
-                        <span className="text-xs text-slate-500">
-                          {timestamp ? new Date(timestamp).toLocaleTimeString() : 'Just now'}
-                        </span>
-                      </div>
-                      
-                      <div className="space-y-1">
-                        <div className="text-xs font-semibold text-red-300">Detailed Exception Stack:</div>
-                        <p className="text-red-200 font-mono text-xs bg-red-950/30 p-3 rounded-lg border border-red-950/40 break-words leading-relaxed">
-                          {log.errorMessage || log.error || 'General connection or AI API error occurred.'}
-                        </p>
-                      </div>
-                      
-                      {log.metadata && Object.keys(log.metadata).length > 0 && (
-                        <details className="group">
-                          <summary className="text-xs text-slate-500 hover:text-slate-300 cursor-pointer outline-none select-none transition">
-                            View context parameters
-                          </summary>
-                          <pre className="text-slate-400 text-[10px] bg-slate-950 p-2.5 rounded-lg overflow-x-auto border border-slate-900/60 mt-1.5 font-mono">
-                            {JSON.stringify(log.metadata, null, 2)}
-                          </pre>
-                        </details>
-                      )}
+      {/* Session Comparison Modal */}
+      {showCompareModal && selectedSessions.length >= 2 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm" onClick={() => setShowCompareModal(false)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-white">🔄 Session Comparison</h3>
+              <button onClick={() => setShowCompareModal(false)} className="text-slate-400 hover:text-white p-2 hover:bg-slate-800 rounded-full">✕</button>
+            </div>
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+              {selectedSessions.map((session, idx) => (
+                <div key={idx} className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className={`w-3 h-3 rounded-full ${idx === 0 ? 'bg-blue-500' : 'bg-green-500'}`} />
+                    <h4 className="font-semibold text-white">{session.targetRole}{session.dreamCompany && ` @ ${session.dreamCompany}`}</h4>
+                  </div>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between"><span className="text-slate-400">Score:</span><span className={`font-bold ${session.overallScore >= 80 ? 'text-green-400' : 'text-amber-400'}`}>{session.overallScore}%</span></div>
+                    <div className="flex justify-between"><span className="text-slate-400">Date:</span><span className="text-white">{new Date(session.createdAt).toLocaleDateString()}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-400">Duration:</span><span className="text-white">{session.duration}</span></div>
+                    <div className="pt-2 border-t border-slate-700">
+                      <p className="text-slate-300 font-medium mb-2">Strengths:</p>
+                      <ul className="space-y-1">{(session.strengths || []).map((s, i) => <li key={i} className="text-green-400 text-xs">✓ {s}</li>)}</ul>
                     </div>
-                  );
-                })
-              )}
+                    <div className="pt-2 border-t border-slate-700">
+                      <p className="text-slate-300 font-medium mb-2">Areas to Improve:</p>
+                      <ul className="space-y-1">{(session.weaknesses || []).map((w, i) => <li key={i} className="text-red-400 text-xs">• {w}</li>)}</ul>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
+            <div className="p-6 border-t border-slate-800 flex justify-end">
+              <button onClick={() => setShowCompareModal(false)} className="px-6 py-2 bg-purple-600 hover:bg-purple-700 rounded-xl text-sm font-semibold transition">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
-            {/* Modal Footer */}
-            <div className="p-6 border-t border-slate-800 flex justify-between bg-slate-950/40">
-              <button
-                onClick={() => exportToCSV(failedActivities, 'system-errors')}
-                className="px-4 py-2 bg-red-900/20 hover:bg-red-900/30 text-red-300 border border-red-900/40 rounded-xl text-sm font-semibold transition"
-              >
-                📥 Export Errors to CSV
-              </button>
-              <button
-                onClick={() => setShowErrorModal(false)}
-                className="px-6 py-2 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 rounded-xl text-sm font-semibold text-white transition shadow-lg shadow-red-500/20"
-              >
-                Done
-              </button>
+      {/* Error Modal */}
+      {showErrorModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm" onClick={() => setShowErrorModal(false)}>
+          <div className="bg-slate-900 border border-red-500/30 rounded-3xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center"><div className="flex items-center gap-3"><span className="text-3xl">🚨</span><div><h3 className="text-xl font-bold text-red-400">System Error Intelligence</h3><p className="text-xs text-slate-400">Latest {failedActivities.length} failed activities</p></div></div><button onClick={() => setShowErrorModal(false)} className="text-slate-400 hover:text-white p-2 hover:bg-slate-800 rounded-full">✕</button></div>
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              {failedActivities.length === 0 ? <div className="text-center py-12 text-slate-400"><p className="text-green-400 text-lg">🟢 Zero Errors Detected</p></div> : failedActivities.map((log, idx) => (
+                <div key={idx} className="p-4 bg-slate-950/40 border border-red-900/20 rounded-2xl space-y-3">
+                  <div className="flex justify-between"><div><div className="font-semibold text-white">{log.userId?.name || 'Unknown'}</div><div className="text-xs text-red-400 mt-1">❌ Failed: {log.event || log.featureUsed}</div></div><span className="text-xs text-slate-500">{new Date(log.createdAt || log.timestamp).toLocaleTimeString()}</span></div>
+                  <p className="text-red-200 font-mono text-xs bg-red-950/30 p-3 rounded-lg">{log.errorMessage || log.error || 'Unknown error'}</p>
+                </div>
+              ))}
             </div>
+            <div className="p-6 border-t border-slate-800 flex justify-between"><button onClick={() => exportToCSV(failedActivities, 'errors')} className="px-4 py-2 bg-red-900/20 text-red-300 rounded-xl text-sm">📥 Export CSV</button><button onClick={() => setShowErrorModal(false)} className="px-6 py-2 bg-red-600 rounded-xl text-sm font-semibold">Done</button></div>
           </div>
         </div>
       )}
@@ -487,469 +619,94 @@ const AdvancedAnalytics = () => {
   );
 };
 
-// ✅ Sub-Components
-
+// ✅ Sub-Components (same as before)
 const InsightCard = ({ insight }) => {
-  const colors = {
-    success: 'from-green-600 to-emerald-600',
-    warning: 'from-amber-600 to-orange-600',
-    info: 'from-blue-600 to-cyan-600',
-    suggestion: 'from-purple-600 to-pink-600'
-  };
-
-  return (
-    <div className={`bg-gradient-to-br ${colors[insight.type]} p-5 rounded-2xl shadow-xl`}>
-      <h3 className="font-bold text-lg mb-2">{insight.title}</h3>
-      <p className="text-white/90 text-sm mb-3">{insight.description}</p>
-      <p className="text-white/70 text-xs bg-white/20 px-3 py-2 rounded-lg inline-block">
-        💡 {insight.action}
-      </p>
-    </div>
-  );
+  const colors = { success: 'from-green-600 to-emerald-600', warning: 'from-amber-600 to-orange-600', info: 'from-blue-600 to-cyan-600', suggestion: 'from-purple-600 to-pink-600' };
+  return (<div className={`bg-gradient-to-br ${colors[insight.type]} p-5 rounded-2xl shadow-xl`}><h3 className="font-bold text-lg mb-2">{insight.title}</h3><p className="text-white/90 text-sm mb-3">{insight.description}</p><p className="text-white/70 text-xs bg-white/20 px-3 py-2 rounded-lg inline-block">💡 {insight.action}</p></div>);
 };
 
 const MetricCard = ({ icon, label, value, gradient }) => (
-  <div className="bg-slate-900/50 border border-slate-800 p-5 rounded-2xl backdrop-blur-sm">
-    <div className="text-3xl mb-2">{icon}</div>
-    <div className={`text-3xl font-bold bg-gradient-to-r ${gradient} bg-clip-text text-transparent`}>
-      {value}
-    </div>
-    <div className="text-slate-400 text-sm mt-1">{label}</div>
-  </div>
+  <div className="bg-slate-800/50 border border-slate-700 p-4 rounded-xl"><div className="text-2xl mb-1">{icon}</div><div className={`text-2xl font-bold bg-gradient-to-r ${gradient} bg-clip-text text-transparent`}>{value}</div><div className="text-slate-400 text-xs mt-1">{label}</div></div>
 );
 
 const OverviewTab = ({ data, liveStats, onSelectUser, onSelectStage }) => (
   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    {/* Feature Adoption Funnel */}
     <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-      <h3 className="text-xl font-bold mb-4">🎪 Feature Adoption Funnel</h3>
-      <div className="space-y-3">
-        {data?.featureAdoption?.map((stage, idx) => (
-          <div 
-            key={idx}
-            onClick={() => onSelectStage?.(stage.stage)}
-            className="group cursor-pointer hover:bg-slate-800/40 p-3 rounded-xl transition-all duration-300 active:scale-[0.98]"
-            title={`Click to filter activities by ${stage.stage}`}
-          >
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-slate-300 transition group-hover:text-purple-300">{stage.stage}</span>
-              <span className="text-white font-semibold">{stage.count}</span>
-            </div>
-            <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500 group-hover:scale-y-110"
-                style={{ width: `${data?.featureAdoption?.[0]?.count ? (stage.count / (data.featureAdoption[0].count || 1)) * 100 : 0}%` }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
+      <h3 className="text-xl font-bold mb-4">🎪 Feature Adoption</h3>
+      <div className="space-y-3">{data?.featureAdoption?.map((s, i) => (<div key={i} onClick={() => onSelectStage?.(s.stage)} className="cursor-pointer hover:bg-slate-800 p-3 rounded-xl transition"><div className="flex justify-between text-sm mb-1"><span className="text-slate-300">{s.stage}</span><span className="text-white font-semibold">{s.count}</span></div><div className="h-2 bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all" style={{ width: `${(s.count / (data.featureAdoption[0]?.count || 1)) * 100}%` }} /></div></div>))}</div>
     </div>
-
-    {/* Top Users */}
     <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-xl font-bold">🏆 Top Engaged Users</h3>
-        {liveStats?.activeUsers > 0 && (
-          <span className="text-xs text-green-400 flex items-center gap-1">
-            <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-            {liveStats.activeUsers} online
-          </span>
-        )}
-      </div>
-      <div className="space-y-3">
-        {data?.topUsers?.slice(0, 5)?.map((user, idx) => (
-          <div 
-            key={idx}
-            onClick={() => onSelectUser?.(user.email || user.name)}
-            className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800 rounded-xl cursor-pointer transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] border border-transparent hover:border-purple-500/20"
-            title={`Click to view activity for ${user.name || user.email}`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center font-bold">
-                {user.name?.charAt(0) || 'U'}
-              </div>
-              <div>
-                <div className="font-semibold">{user.name || user.email}</div>
-                <div className="text-xs text-slate-400">{user?.featuresUsed?.length || 0} features used</div>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-purple-400">{user.engagementScore}</div>
-              <div className="text-xs text-slate-400">score</div>
-            </div>
-          </div>
-        ))}
-      </div>
+      <div className="flex justify-between mb-4"><h3 className="text-xl font-bold">🏆 Top Users</h3>{liveStats?.activeUsers > 0 && <span className="text-xs text-green-400">{liveStats.activeUsers} online</span>}</div>
+      <div className="space-y-3">{data?.topUsers?.slice(0, 5).map((u, i) => (<div key={i} onClick={() => onSelectUser?.(u.email || u.name)} className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800 rounded-xl cursor-pointer transition"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center font-bold text-sm">{u.name?.[0] || 'U'}</div><div><div className="font-semibold text-sm">{u.name || u.email}</div><div className="text-xs text-slate-400">{u.featuresUsed?.length || 0} features</div></div></div><div className="text-right"><div className="font-bold text-purple-400">{u.engagementScore}</div><div className="text-xs text-slate-500">score</div></div></div>))}</div>
     </div>
   </div>
 );
 
 const JourneyTab = ({ data, onSelectUser }) => (
   <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-    <h3 className="text-xl font-bold mb-6 text-white">🗺️ User Journey Map</h3>
-    <div className="space-y-6">
-      {data?.topUsers?.slice(0, 5).map((user, idx) => (
-        <div 
-          key={idx}
-          onClick={() => onSelectUser?.(user.email || user.name)}
-          className="border-l-2 border-purple-500 pl-6 py-3 cursor-pointer hover:bg-slate-800/30 rounded-r-2xl transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] border-y border-r border-transparent hover:border-slate-800"
-          title={`Click to filter activities by ${user.name || user.email}`}
-        >
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-xl font-bold text-white">
-              {user.name?.charAt(0).toUpperCase() || 'U'}
-            </div>
-            <div className="flex-1">
-              <div className="font-bold text-lg text-white">
-                {user.name !== 'Unknown User' ? user.name : user.email}
-              </div>
-              <div className="text-sm text-slate-400">{user.email}</div>
-              <div className="text-sm text-slate-400">Engagement Score: {user.engagementScore}/100</div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {user.featuresUsed.map((feature, fidx) => (
-              <span key={fidx} className="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-sm border border-purple-500/30">
-                {feature.replace('-', ' ')}
-              </span>
-            ))}
-          </div>
-          <div className="text-sm text-slate-400">
-            {user.totalActions} actions • {user.sessionCount} sessions • Last active {new Date(user.lastActive).toLocaleDateString()}
-          </div>
-        </div>
-      ))}
-    </div>
+    <h3 className="text-xl font-bold mb-6">🗺️ User Journey</h3>
+    <div className="space-y-4">{data?.topUsers?.slice(0, 5).map((u, i) => (<div key={i} onClick={() => onSelectUser?.(u.email)} className="border-l-2 border-purple-500 pl-4 py-2 cursor-pointer hover:bg-slate-800 rounded-r-xl transition"><div className="flex items-center gap-3 mb-2"><div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center font-bold">{u.name?.[0] || 'U'}</div><div><div className="font-bold">{u.name !== 'Unknown User' ? u.name : u.email}</div><div className="text-xs text-slate-400">Score: {u.engagementScore}/100 • {u.totalActions} actions</div></div></div><div className="flex flex-wrap gap-1">{u.featuresUsed?.map((f, fi) => (<span key={fi} className="px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded text-xs">{f.replace('-', ' ')}</span>))}</div></div>))}</div>
   </div>
 );
 
 const HeatmapTab = ({ data, liveStats, onSelectHour }) => (
   <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-    <div className="flex justify-between items-center mb-6">
-      <h3 className="text-xl font-bold">🔥 Hourly Activity Heatmap</h3>
-      {liveStats?.eventsPerMinute > 0 && (
-        <span className="text-xs text-purple-400">
-          ⚡ {liveStats.eventsPerMinute} events/min live
-        </span>
-      )}
-    </div>
-    <div className="grid grid-cols-12 gap-2">
-      {data?.hourlyActivity?.map((count, hour) => {
-        const intensity = Math.min(count / 10, 1);
-        return (
-          <div 
-            key={hour} 
-            className="text-center group cursor-pointer"
-            onClick={() => onSelectHour?.(hour)}
-            title={`${hour}:00 - ${count} actions (Click to filter stream)`}
-          >
-            <div
-              className="h-24 rounded-lg transition-all duration-300 group-hover:scale-105 group-hover:brightness-125 group-hover:shadow-lg group-hover:shadow-purple-500/20"
-              style={{
-                background: `linear-gradient(to top, rgba(168, 85, 247, ${intensity}), rgba(236, 72, 153, ${intensity}))`,
-                opacity: 0.3 + intensity * 0.7
-              }}
-            />
-            <div className="text-xs text-slate-400 mt-2 transition duration-300 group-hover:text-purple-400 font-semibold">{hour}:00</div>
-          </div>
-        );
-      })}
-    </div>
+    <div className="flex justify-between mb-6"><h3 className="text-xl font-bold">🔥 Hourly Activity</h3>{liveStats?.eventsPerMinute > 0 && <span className="text-xs text-purple-400">⚡ {liveStats.eventsPerMinute}/min</span>}</div>
+    <div className="grid grid-cols-12 gap-2">{data?.hourlyActivity?.map((count, hour) => { const intensity = Math.min(count / 10, 1); return (<div key={hour} onClick={() => onSelectHour?.(hour)} className="text-center cursor-pointer hover:scale-105 transition"><div className="h-20 rounded-lg transition" style={{ background: `linear-gradient(to top, rgba(139, 92, 246, ${intensity}), rgba(236, 72, 153, ${intensity}))`, opacity: 0.3 + intensity * 0.7 }} /><div className="text-xs text-slate-500 mt-1">{hour}:00</div></div>); })}</div>
   </div>
 );
 
-// ✅ Enhanced ActivityTab with ALL Pro Tips
 const ActivityTab = ({ logs, liveActivities, isConnected, searchQuery, onSearchChange, onExport }) => {
   const [expandedItem, setExpandedItem] = useState(null);
-
-  // Merge and deduplicate activities
   const allActivities = useMemo(() => {
     const combined = [...(logs || []), ...(liveActivities || [])];
     const seen = new Set();
-    return combined
-      .sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp))
-      .filter(item => {
-        const key = `${item.userId?._id || item.userId}-${item.event || item.featureUsed}-${new Date(item.createdAt || item.timestamp).getTime()}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .slice(0, 100);
+    return combined.sort((a, b) => new Date(b.createdAt || b.timestamp) - new Date(a.createdAt || a.timestamp)).filter(item => {
+      const key = `${item.userId?._id || item.userId}-${item.event}-${new Date(item.createdAt || item.timestamp).getTime()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 100);
   }, [logs, liveActivities]);
 
-  // ✅ Pro Tip #3: Filter by search query
-  const filteredActivities = useMemo(() => {
+  const filtered = useMemo(() => {
     if (!searchQuery.trim()) return allActivities;
-    
-    const query = searchQuery.toLowerCase();
+    const q = searchQuery.toLowerCase();
     return allActivities.filter(item => {
-      // ✅ Allow filtering by success/failure status
-      const success = item.success !== false;
-      if (query === 'failed' || query === 'error') {
-        if (!success) return true;
-      } else if (query === 'success') {
-        if (success) return true;
-      }
-
-      const userName = item.userId?.name?.toLowerCase() || '';
-      const userEmail = item.userId?.email?.toLowerCase() || '';
-      const event = (item.event || item.featureUsed || '').toLowerCase();
-      const role = (item.companyName || item.jobRole || item.metadata?.targetRole || '').toLowerCase();
-      
-      return userName.includes(query) || 
-             userEmail.includes(query) || 
-             event.includes(query) || 
-             role.includes(query);
+      if (q === 'failed' && item.success === false) return true;
+      if (q === 'success' && item.success !== false) return true;
+      return (item.userId?.name?.toLowerCase() || '').includes(q) || (item.userId?.email?.toLowerCase() || '').includes(q) || (item.event || '').toLowerCase().includes(q);
     });
   }, [allActivities, searchQuery]);
 
-  // ✅ Debug: Log when filter changes
-  useEffect(() => {
-    console.log('📊 Activity Filter Debug:', {
-      searchQuery,
-      totalActivities: allActivities.length,
-      filteredCount: filteredActivities.length,
-      failedCount: allActivities.filter(a => a.success === false).length
-    });
-  }, [searchQuery, allActivities, filteredActivities]);
-
   return (
     <div className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl">
-      {/* Header with Search & Export */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div>
-          <h3 className="text-xl font-bold text-white">⚡ Real-Time Activity Stream</h3>
-          <div className="flex items-center gap-2 text-xs mt-1">
-            <span className={`px-2 py-1 rounded ${
-              isConnected ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'
-            }`}>
-              {isConnected ? '🟢 Live' : '🟡 Historical'}
-            </span>
-            <span className="text-slate-400">
-              {filteredActivities.length} of {allActivities.length} events
-            </span>
-            {searchQuery === 'failed' && (
-              <span className="px-2 py-1 bg-red-500/20 text-red-400 rounded text-xs">
-                🔴 Showing failed only
-              </span>
-            )}
-          </div>
-        </div>
-        
-        <div className="flex flex-wrap gap-3">
-          {/* ✅ Pro Tip #3: Search Input */}
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search user, event, role..."
-              value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
-              className="w-64 px-4 py-2 pl-10 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-            <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            {searchQuery && (
-              <button 
-                onClick={() => onSearchChange('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-          
-          {/* ✅ Pro Tip #1: Export Button */}
-          <button
-            onClick={() => onExport(filteredActivities, 'activity-export')}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition flex items-center gap-2 shadow-lg shadow-emerald-500/20"
-            title="Export filtered activities to CSV"
-          >
-            📥 Export CSV
-          </button>
+      <div className="flex flex-col md:flex-row justify-between gap-4 mb-6">
+        <div><h3 className="text-xl font-bold">⚡ Activity Stream</h3><div className="text-xs text-slate-400 mt-1">{isConnected ? '🟢 Live' : '🟡 Historical'} • {filtered.length} events</div></div>
+        <div className="flex gap-3">
+          <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => onSearchChange(e.target.value)} className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm w-48" />
+          <button onClick={() => onExport(filtered, 'activity')} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm">📥 Export</button>
         </div>
       </div>
-      
-      {/* Activity List */}
-      <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-        {filteredActivities.length === 0 ? (
-          <div className="text-center py-12 text-slate-400">
-            {searchQuery === 'failed' ? (
-              <div className="space-y-3">
-                <p className="text-amber-400/80 text-lg">🔍 No failed activities found</p>
-                <p className="text-sm text-slate-500">
-                  Great news! There are no errors in the current time range.
-                </p>
-                <button 
-                  onClick={() => onSearchChange('')}
-                  className="text-purple-400 hover:underline text-sm"
-                >
-                  Clear filter and show all
-                </button>
+      <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+        {filtered.length === 0 ? <div className="text-center py-8 text-slate-500">No events found</div> : filtered.map((log, idx) => {
+          const key = `${log._id || log.id || idx}`;
+          return (
+            <div key={key} onClick={() => setExpandedItem(expandedItem === key ? null : key)} className={`p-3 rounded-lg cursor-pointer transition ${log.success !== false ? 'bg-slate-800/50 hover:bg-slate-800' : 'bg-red-900/20 border border-red-500/30'}`}>
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-3"><div className={`w-2 h-2 rounded-full ${log.success !== false ? 'bg-green-500' : 'bg-red-500'}`} /><div><div className="font-medium text-sm">{log.userId?.name || log.userId?.email || 'User'}</div><div className="text-xs text-slate-400">{log.event || log.featureUsed} • {new Date(log.createdAt || log.timestamp).toLocaleDateString()}</div></div></div>
+                <span className={`px-2 py-0.5 rounded text-xs ${log.success !== false ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>{log.success !== false ? '✅' : '❌'}</span>
               </div>
-            ) : searchQuery ? (
-              <div>
-                <p className="mb-2">No results for "{searchQuery}"</p>
-                <button 
-                  onClick={() => onSearchChange('')}
-                  className="text-purple-400 hover:underline text-sm"
-                >
-                  Clear search
-                </button>
-              </div>
-            ) : isConnected ? (
-              'Waiting for activity...'
-            ) : (
-              'No activity logs found'
-            )}
-          </div>
-        ) : (
-          filteredActivities.map((log, idx) => {
-            const event = log.event || log.featureUsed || 'unknown';
-            const success = log.success !== false;
-            const timestamp = log.createdAt || log.timestamp;
-            const userName = log.userId?.name || log.userId?.email?.split('@')[0] || 'Unknown';
-            const userEmail = log.userId?.email || '';
-            const isLive = log.isLive || !log._id; // Live events won't have MongoDB _id
-            
-            const itemKey = `${log._id || log.id || timestamp}-${idx}`;
-            const isExpanded = expandedItem === itemKey;
-
-            return (
-              <div 
-                key={itemKey} 
-                onClick={() => setExpandedItem(isExpanded ? null : itemKey)}
-                className={`p-4 rounded-xl transition cursor-pointer ${
-                  isLive ? 'bg-purple-500/10 border border-purple-500/30' : 'bg-slate-800/50 hover:bg-slate-800'
-                } ${!success ? 'border-l-4 border-l-red-500 hover:border-l-red-400' : 'hover:border-l-4 hover:border-l-green-500'} ${isExpanded ? 'ring-2 ring-purple-500/30 bg-slate-800/80' : ''}`}
-                title="Click to view details/errors"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    {/* Live indicator */}
-                    {isLive && (
-                      <span className="w-2 h-2 bg-purple-400 rounded-full animate-ping" title="Live event" />
-                    )}
-                    <div className={`w-3 h-3 rounded-full ${success ? 'bg-green-500' : 'bg-red-500'}`} />
-                    <div>
-                      <div className="font-semibold text-white capitalize flex items-center gap-2">
-                        {userName}
-                        {userEmail && (
-                          <span className="text-xs text-slate-400 font-normal">({userEmail})</span>
-                        )}
-                      </div>
-                      <div className="text-sm text-slate-400">
-                        {event?.replace('-', ' ')} • {log.companyName || log.jobRole || log.metadata?.targetRole || 'General'}
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        {timestamp ? new Date(timestamp).toLocaleString() : 'Just now'}
-                        {isLive && <span className="ml-2 text-purple-400">• Live</span>}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      success ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                    }`}>
-                      {success ? '✅ Success' : '❌ Failed'}
-                    </span>
-                    <span className="text-sm text-slate-400 min-w-[80px] text-right">
-                      {log.responseTime || log.metadata?.duration ? `${log.responseTime || log.metadata.duration}ms` : '-'}
-                    </span>
-                    <span className="text-slate-500 text-xs transition duration-300 transform">
-                      {isExpanded ? '▲' : '▼'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Detailed view (error messages / metadata) */}
-                {isExpanded && (
-                  <div 
-                    className="mt-4 pt-4 border-t border-slate-700/50 text-sm space-y-3 animate-fade-in"
-                    onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inner content
-                  >
-                    {!success && (
-                      <div className="space-y-1.5">
-                        <span className="text-red-400 font-semibold flex items-center gap-1">
-                          ⚠️ Error Details:
-                        </span>
-                        <p className="text-red-200 font-mono text-xs bg-red-950/40 p-3 rounded-lg border border-red-900/30 break-words leading-relaxed">
-                          {log.errorMessage || log.error || 'Unknown server error occurred.'}
-                        </p>
-                      </div>
-                    )}
-                    
-                    {log.metadata && Object.keys(log.metadata).length > 0 && (
-                      <div className="space-y-1">
-                        <span className="text-slate-300 font-semibold">Activity Metadata:</span>
-                        <pre className="text-slate-400 text-xs bg-slate-950/50 p-3 rounded-lg overflow-x-auto border border-slate-800 font-mono">
-                          {JSON.stringify(log.metadata, null, 2)}
-                        </pre>
-                      </div>
-                    )}
-                    
-                    <div className="flex flex-wrap justify-between text-xs text-slate-500 gap-2 pt-2 border-t border-slate-800/40">
-                      <span>User Reference ID: {log.userId?._id || log.userId || 'N/A'}</span>
-                      {timestamp && <span>Log Timestamp: {new Date(timestamp).toISOString()}</span>}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
+              {expandedItem === key && <div className="mt-2 pt-2 border-t border-slate-700 text-xs text-slate-400"><pre className="bg-slate-950 p-2 rounded overflow-x-auto">{JSON.stringify(log, null, 2)}</pre></div>}
+            </div>
+          );
+        })}
       </div>
-      
-      {/* Footer actions */}
-      {filteredActivities.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between items-center text-xs text-slate-400">
-          <span>Showing {filteredActivities.length} events</span>
-          <button
-            onClick={() => onExport(filteredActivities, `activity-${new Date().toISOString().split('T')[0]}`)}
-            className="text-emerald-400 hover:text-emerald-300 transition flex items-center gap-1"
-          >
-            📥 Export visible
-          </button>
-        </div>
-      )}
     </div>
   );
 };
 
-const LoadingScreen = () => (
-  <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-    <div className="text-center">
-      <div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-500 border-t-transparent mx-auto mb-4" />
-      <p className="text-slate-400">Loading intelligence...</p>
-    </div>
-  </div>
-);
-
-const ErrorScreen = ({ error, retry }) => (
-  <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-    <div className="max-w-md w-full bg-slate-900/50 border border-slate-800 p-8 rounded-3xl backdrop-blur-md text-center space-y-6">
-      <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl flex items-center justify-center text-3xl mx-auto shadow-lg shadow-red-500/5 animate-pulse">
-        ⚠️
-      </div>
-      <div className="space-y-2">
-        <h2 className="text-2xl font-bold bg-gradient-to-r from-red-400 to-orange-400 bg-clip-text text-transparent">
-          Connection Failed
-        </h2>
-        <p className="text-slate-400 text-sm">
-          {error.includes('403') || error.includes('401')
-            ? 'You do not have administrative privileges to access this analytics dashboard.'
-            : error}
-        </p>
-      </div>
-      <button
-        onClick={retry}
-        className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-xl font-medium transition shadow-lg shadow-purple-500/20 hover:scale-[1.02] active:scale-[0.98]"
-      >
-        🔄 Retry Connection
-      </button>
-    </div>
-  </div>
-);
+const LoadingScreen = () => (<div className="min-h-screen bg-slate-950 flex items-center justify-center"><div className="text-center"><div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-500 border-t-transparent mx-auto mb-4" /><p className="text-slate-400">Loading intelligence...</p></div></div>);
+const ErrorScreen = ({ error, retry }) => (<div className="min-h-screen bg-slate-950 flex items-center justify-center p-6"><div className="max-w-md w-full bg-slate-900/50 border border-slate-800 p-8 rounded-3xl text-center space-y-6"><div className="w-16 h-16 bg-red-500/10 text-red-400 rounded-2xl flex items-center justify-center text-3xl mx-auto">⚠️</div><h2 className="text-2xl font-bold text-red-400">Connection Failed</h2><p className="text-slate-400 text-sm">{error}</p><button onClick={retry} className="w-full py-3 bg-purple-600 hover:bg-purple-700 rounded-xl font-medium transition">🔄 Retry</button></div></div>);
 
 export default AdvancedAnalytics;

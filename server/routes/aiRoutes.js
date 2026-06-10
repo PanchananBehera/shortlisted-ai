@@ -16,8 +16,11 @@ import {
   processInterviewTurn, 
   evaluateInterview, 
   getInterviewHistory, 
-  getInterviewDetail 
+  getInterviewDetail,
+  saveInterviewSession  // ✅ Added import for save route
 } from '../controllers/interviewController.js';
+import { sendInterviewReportEmail } from '../controllers/interviewController.js';
+
 
 const router = express.Router();
 
@@ -65,5 +68,10 @@ router.delete('/history/:id', protect, deleteAnalysisHistory);
 // ✅ EMAIL & EXPORT ROUTES
 router.post('/email-resume', protect, emailResume);
 router.post('/export-ats-report', protect, exportATSReport);
+
+// ✅ INTERVIEW SESSION ROUTES (for analytics)
+router.post('/interview/sessions', protect, saveInterviewSession);  // ✅ Save session after interview
+router.get('/interview/history', protect, getInterviewHistory);      // ✅ Fetch history for analytics
+router.post('/interview/email-report', protect, sendInterviewReportEmail);
 
 export default router;

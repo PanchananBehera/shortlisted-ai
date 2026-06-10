@@ -19,10 +19,13 @@ export default function MockInterview() {
   const [currentMessage, setCurrentMessage] = useState('');
   const [userAnswer, setUserAnswer] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [interviewStage, setInterviewStage] = useState('intro');
+  const [interviewStage, setInterviewStage] = useState('setup');
   
   // Custom Session State
   const [targetRole, setTargetRole] = useState('Software Engineer');
+  const [jobDescription, setJobDescription] = useState('');
+  const [dreamCompany, setDreamCompany] = useState('');
+  const [experienceLevel, setExperienceLevel] = useState('mid');
   const [questionCount, setQuestionCount] = useState(0);
   const [feedbackData, setFeedbackData] = useState(null);
   const [activeAccordion, setActiveAccordion] = useState(null);
@@ -30,6 +33,7 @@ export default function MockInterview() {
   // Refs to prevent double-render startup race conditions
   const hasStartedRef = useRef(false);
   const firstQuestionAskedRef = useRef(false);
+  const startTimeRef = useRef(null);
 
   // Hooks
   const { speak, stopSpeaking, isSpeaking } = useRoboticVoice();
@@ -124,8 +128,9 @@ export default function MockInterview() {
   const startInterview = () => {
     if (hasStartedRef.current) return;
     hasStartedRef.current = true;
+    startTimeRef.current = Date.now();
 
-    const introMessage = `Hi ${user?.name?.split(' ')[0] || 'there'}! I'm your AI career coach. Let's begin!`;
+    const introMessage = `Hi ${user?.name?.split(' ')[0] || 'there'}! I'm your AI career coach. Let's begin the mock interview for the ${targetRole} position${dreamCompany ? ` at ${dreamCompany}` : ''}.`;
     setCurrentMessage(introMessage);
     setConversation([{ role: 'ai', content: introMessage, isTyping: true }]);
     setInterviewStage('asking');
@@ -150,9 +155,9 @@ export default function MockInterview() {
     const questions = [
       `Tell me about yourself and your experience as a ${targetRole}.`,
       "Can you describe a challenging project you've worked on and how you overcame obstacles?",
-      "What are your greatest strengths and how do they apply to this role?",
+      `What are your greatest strengths and how do they apply to this ${targetRole} role?`,
       "Where do you see yourself in 5 years in your career?",
-      "Why should we hire you for this position?"
+      `Why should we hire you for this ${targetRole} position${dreamCompany ? ` at ${dreamCompany}` : ''}?`
     ];
     
     const question = questions[index] || questions[0];
@@ -188,7 +193,9 @@ export default function MockInterview() {
         const evalRes = await api.post('/ai/interview/evaluate', {
           conversation: updatedConversation,
           targetRole: targetRole,
-          jobDescription: ''
+          jobDescription: jobDescription,
+          dreamCompany: dreamCompany,
+          experienceLevel: experienceLevel
         });
 
         if (evalRes.data.success) {
@@ -202,6 +209,34 @@ export default function MockInterview() {
           setCurrentMessage(closingMessage);
           setConversation(prev => [...prev, { role: 'ai', content: closingMessage, isTyping: true }]);
           speak(closingMessage, () => setAvatarState('idle'));
+
+          // Compute duration
+          const endTime = Date.now();
+          const diffMs = startTimeRef.current ? endTime - startTimeRef.current : 0;
+          const diffSecs = Math.floor(diffMs / 1000);
+          const minutes = Math.floor(diffSecs / 60);
+          const seconds = diffSecs % 60;
+          const durationStr = `${minutes}m ${seconds}s`;
+
+          // Save the interview session
+          try {
+            await api.post('/interview/sessions', {
+              userId: user?._id || user?.id,
+              targetRole,
+              dreamCompany,
+              experienceLevel,
+              overallScore: evalReport.overallScore || 80,
+              questionCount: 5,
+              duration: durationStr,
+              strengths: evalReport.strengths || [],
+              weaknesses: evalReport.weaknesses || [],
+              suggestions: evalReport.suggestions || [],
+              detailedAssessment: evalReport.detailedAssessment || [],
+              roadmap: evalReport.roadmap || []
+            });
+          } catch (saveErr) {
+            console.error('Failed to save interview session:', saveErr);
+          }
         } else {
           throw new Error(evalRes.data.error || 'Evaluation failed');
         }
@@ -210,7 +245,9 @@ export default function MockInterview() {
         const res = await api.post('/ai/interview/turn', {
           conversation: updatedConversation,
           targetRole: targetRole,
-          jobDescription: ''
+          jobDescription: jobDescription,
+          dreamCompany: dreamCompany,
+          experienceLevel: experienceLevel
         });
 
         if (res.data.success) {
@@ -315,10 +352,12 @@ export default function MockInterview() {
                 'bg-blue-500 animate-pulse'
               }`} />
               <span className="text-sm font-medium text-gray-300">
-                {avatarState === 'talking' && '🗣️ PacoBot is speaking...'}
-                {avatarState === 'thinking' && '🤔 PacoBot is thinking...'}
-                {avatarState === 'nodding' && '👍 Terrific job!'}
-                {avatarState === 'idle' && (isListening ? '🔴 Recording voice...' : '👂 PacoBot is listening...')}
+                {interviewStage === 'setup' ? '⚙️ Configuration stage...' : (
+                  avatarState === 'talking' ? '🗣️ PacoBot is speaking...' :
+                  avatarState === 'thinking' ? '🤔 PacoBot is thinking...' :
+                  avatarState === 'nodding' ? '👍 Terrific job!' :
+                  isListening ? '🔴 Recording voice...' : '👂 PacoBot is listening...'
+                )}
               </span>
               {isSpeaking && <span className="ml-auto text-xs text-green-400 font-bold px-2 py-0.5 bg-green-950/50 rounded border border-green-800/30 animate-pulse">🔊 SPEAKING</span>}
             </div>
@@ -337,8 +376,85 @@ export default function MockInterview() {
           {/* Right: Conversation or Evaluation */}
           <div className="space-y-4">
             
+            {/* SETUP STAGE */}
+            {interviewStage === 'setup' && (
+              <div className="bg-gray-800/90 backdrop-blur-md rounded-2xl p-6 border border-gray-700 shadow-xl space-y-6 animate-fade-in">
+                <div className="space-y-1.5 border-b border-gray-700 pb-4">
+                  <h2 className="text-xl font-bold text-white bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">Configure Your PacoBot Session</h2>
+                  <p className="text-xs text-gray-400">Specify your target role and goals to customize the mock interview questions.</p>
+                </div>
+                
+                <div className="space-y-4">
+                  {/* Job Role Input */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-green-400">Target Job Role</label>
+                    <input
+                      type="text"
+                      value={targetRole}
+                      onChange={(e) => setTargetRole(e.target.value)}
+                      placeholder="e.g. Software Engineer, Product Manager"
+                      className="w-full bg-gray-900 border border-gray-750 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500 transition duration-200"
+                    />
+                  </div>
+
+                  {/* Dream Company Input */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-green-400">Dream Company (Optional)</label>
+                    <input
+                      type="text"
+                      value={dreamCompany}
+                      onChange={(e) => setDreamCompany(e.target.value)}
+                      placeholder="e.g. Google, Stripe, Microsoft"
+                      className="w-full bg-gray-900 border border-gray-750 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500 transition duration-200"
+                    />
+                  </div>
+
+                  {/* Experience Level */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-green-400">Experience Level</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      {['junior', 'mid', 'senior'].map(level => (
+                        <button
+                          key={level}
+                          type="button"
+                          onClick={() => setExperienceLevel(level)}
+                          className={`py-2.5 rounded-lg border font-semibold text-sm capitalize transition ${
+                            experienceLevel === level
+                              ? 'bg-green-600 border-green-500 text-white shadow-md shadow-green-900/20'
+                              : 'bg-gray-900 border-gray-750 text-gray-300 hover:bg-gray-800'
+                          }`}
+                        >
+                          {level}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Job Description Textarea */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-green-400">Job Description / Requirements (Optional)</label>
+                    <textarea
+                      value={jobDescription}
+                      onChange={(e) => setJobDescription(e.target.value)}
+                      placeholder="Paste the job description or core skills here to get tailored interview questions from PacoBot..."
+                      rows={4}
+                      className="w-full bg-gray-900 border border-gray-750 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500 transition duration-200 font-sans resize-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setInterviewStage('intro')}
+                  disabled={!targetRole.trim()}
+                  className="w-full py-3.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold rounded-xl transition shadow-lg shadow-green-900/20 transform hover:-translate-y-0.5"
+                >
+                  Start Mock Interview 🚀
+                </button>
+              </div>
+            )}
+
             {/* CONVERSATION STAGE */}
-            {interviewStage !== 'completed' && (
+            {interviewStage !== 'completed' && interviewStage !== 'setup' && (
               <div className="space-y-4">
                 
                 {/* Chat Area */}
@@ -590,11 +706,11 @@ export default function MockInterview() {
                       hasStartedRef.current = false;
                       firstQuestionAskedRef.current = false;
                       
-                      setInterviewStage('intro');
+                      setInterviewStage('setup');
                     }}
                     className="flex-1 py-3.5 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-bold rounded-lg transition text-center shadow-lg shadow-green-900/20"
                   >
-                    Practice Again 🎙️
+                    Practice Again 🎯
                   </button>
                   
                   <button
