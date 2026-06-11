@@ -3,11 +3,48 @@
 @tailwind utilities;
 
 @layer base {
+  /* ✅ Your existing dark mode setup */
   body {
     @apply bg-surface-light text-gray-900 transition-colors duration-200;
   }
   
   .dark body {
     @apply bg-surface-dark text-gray-100;
+  }
+
+  /* 📱 Mobile-First Global Fixes */
+  @media (max-width: 640px) {
+    /* Prevent iOS Safari zoom on input focus */
+    input, textarea, select {
+      font-size: 16px !important;
+    }
+    
+    /* Apple/Google minimum touch target standard (44x44px) */
+    button, [role="button"], [type="button"], a {
+      min-height: 44px;
+      min-width: 44px;
+    }
+    
+    /* Safe area padding for notched/rounded phones */
+    body {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+
+  /* Smooth scrolling & iOS momentum scrolling */
+  html {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar but keep scroll functionality */
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }
