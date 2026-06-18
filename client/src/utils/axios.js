@@ -120,7 +120,7 @@ const silentlyReportError = async (error, context = {}) => {
 
   const payload = {
     type: getErrorType(error),
-    message: error?.response?.data?.message || error?.message || 'Unknown error',
+    message: error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Unknown error',
     context: safeContext,
     userId,
     userEmail,

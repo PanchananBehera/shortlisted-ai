@@ -54,7 +54,9 @@ export const sendEmail = async ({ to, subject, html, text }) => {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
       },
-      connectionTimeout: 5000
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000
     },
     // Configuration 2: SMTP Port 587 (TLS/STARTTLS)
     {
@@ -69,7 +71,9 @@ export const sendEmail = async ({ to, subject, html, text }) => {
       tls: {
         rejectUnauthorized: false // Prevents local/hosting SSL certificate issues
       },
-      connectionTimeout: 5000
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000
     },
     // Configuration 3: SMTP Port 465 (Secure SSL)
     {
@@ -84,7 +88,9 @@ export const sendEmail = async ({ to, subject, html, text }) => {
       tls: {
         rejectUnauthorized: false
       },
-      connectionTimeout: 5000
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000
     }
   ];
 
@@ -99,10 +105,7 @@ export const sendEmail = async ({ to, subject, html, text }) => {
       
       transporter = nodemailer.createTransport(cleanConfig);
       
-      // Verify connection with a strict 3-second timeout
-      await verifyWithTimeout(transporter, 3000);
-
-      // Send the mail
+      // Send the mail directly (nodemailer will verify connection & credentials internally)
       const info = await transporter.sendMail({
         from: `"Shortlisted AI" <${process.env.EMAIL_USER}>`,
         to,

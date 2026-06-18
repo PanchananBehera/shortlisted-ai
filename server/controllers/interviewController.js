@@ -2,7 +2,7 @@
 import InterviewSession from '../models/interviewSession.js';
 import { generateContentWithRetry } from './aiController.js';
 import { logAIUsage } from '../utils/aiUsageLogger.js';
-import nodemailer from 'nodemailer'; // ✅ Moved to top
+import { sendEmail } from '../utils/emails.js';
 
 // ✅ Process a single interview turn (user answer → AI response)
 export const processInterviewTurn = async (req, res) => {
@@ -422,17 +422,7 @@ export const sendInterviewReportEmail = async (req, res) => {
       </div>
     `;
 
-    // Setup Nodemailer transporter
-    const transporter = nodemailer.createTransport({
-      service: 'gmail', // Use 'smtp.office365.com' for Outlook, or custom host/port
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS, // ⚠️ Must be an App Password for Gmail
-      }
-    });
-
-    await transporter.sendMail({
-      from: `"Shortlisted AI Reports" <${process.env.EMAIL_USER}>`,
+    await sendEmail({
       to: recipientEmail,
       subject: `📊 Your Mock Interview Report - ${new Date().toLocaleDateString()}`,
       html: htmlContent,
