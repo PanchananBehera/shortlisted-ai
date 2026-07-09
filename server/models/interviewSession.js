@@ -1,25 +1,38 @@
-// server/models/interviewSession.js
 import mongoose from 'mongoose';
 
-const InterviewSessionSchema = new mongoose.Schema({
-  userId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
-    required: true, 
-    index: true 
-  },
-  targetRole: { type: String, required: true },  // ✅ Made required
+const interviewSessionSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  targetRole: { type: String, required: true, index: true },
   dreamCompany: String,
-  experienceLevel: { 
-    type: String, 
-    enum: ['junior', 'mid', 'senior'],
-    default: 'mid'
-  },
+  experienceLevel: { type: String, enum: ['junior', 'mid', 'senior'], default: 'mid' },
   overallScore: Number,
   questionCount: Number,
-  duration: String, // e.g., "12m 34s"
+  duration: String,
+  
+  // ✅ NEW: Session Recording Fields
+  audioRecordingUrl: String, // MongoDB GridFS or cloud storage URL
+  transcript: [{
+    timestamp: Number, // milliseconds from start
+    speaker: { type: String, enum: ['ai', 'user'] },
+    text: String,
+    confidence: Number, // for speech recognition confidence
+    sentimentScore: Number, // -1 to 1 (negative to positive)
+    toneTags: [String] // ['confident', 'hesitant', 'professional', etc.]
+  }],
+  recordingDuration: Number, // in seconds
+  audioBlobId: mongoose.Schema.Types.ObjectId, // Reference to GridFS file
+  
+  // ✅ NEW: Real-Time Coaching Data
+  coachingHints: [{
+    timestamp: Number,
+    questionIndex: Number,
+    hint: String,
+    category: { type: String, enum: ['structure', 'content', 'delivery', 'confidence'] }
+  }],
+  
+  // Existing fields
   strengths: [String],
-  weaknesses: [String], 
+  weaknesses: [String],
   suggestions: [String],
   detailedAssessment: [{
     question: String,
@@ -33,22 +46,16 @@ const InterviewSessionSchema = new mongoose.Schema({
     actionStep: String,
     priority: { type: String, enum: ['Critical', 'Important', 'Optional'] },
     timeEstimate: String
-  }]
-}, { timestamps: true });  // ✅ Adds createdAt and updatedAt automatically
-
-// Add virtual for formatted date display
-InterviewSessionSchema.virtual('completedAtFormatted').get(function() {
-  return this.createdAt?.toLocaleDateString('en-US', {
-    year: 'numeric', 
-    month: 'short', 
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  }],
+  
+  // Metadata
+  createdAt: { type: Date, default: Date.now, index: true },
+  updatedAt: { type: Date, default: Date.now }
+}, {
+  timestamps: true
 });
 
-// Ensure virtuals are included when converting to JSON
-InterviewSessionSchema.set('toJSON', { virtuals: true });
-InterviewSessionSchema.set('toObject', { virtuals: true });
+// Index for fast playback queries
+interviewSessionSchema.index({ userId: 1, createdAt: -1 });
 
-export default mongoose.model('InterviewSession', InterviewSessionSchema);
+export default mongoose.model('InterviewSession', interviewSessionSchema);

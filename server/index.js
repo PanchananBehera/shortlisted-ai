@@ -15,9 +15,11 @@ import analyticsRoutes from './routes/analyticsRoutes.js';
 import profileRoutes from './routes/profile.js';
 import profileControllerRoutes from './routes/profileRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+import audioRoutes from './routes/audioRoutes.js';
 // ✅ NEW: Error reporting routes
 import errorReportRoutes from './routes/errorReports.js';
 import interviewRoutes from './routes/interviewRoutes.js';
+import userRoutes from './routes/userRoutes.js';
 
 // ✅ Real-Time Tracking Imports
 import { initSocket } from './utils/socket.js';
@@ -112,6 +114,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/reports', errorReportRoutes);
 app.use('/api/admin/reports', errorReportRoutes);
 app.use('/api/interview', interviewRoutes);
+app.use('/api', userRoutes);
+app.use('/api/audio', audioRoutes);
 // ✅ Health Check (enhanced for uptime monitoring)
 app.get('/api/health', (req, res) => {
   res.json({ 

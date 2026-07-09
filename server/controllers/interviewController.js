@@ -3,6 +3,7 @@ import InterviewSession from '../models/interviewSession.js';
 import { generateContentWithRetry } from './aiController.js';
 import { logAIUsage } from '../utils/aiUsageLogger.js';
 import { sendEmail } from '../utils/emails.js';
+import { updateGamification } from '../services/gamificationService.js'; // ✅ New import
 
 // ✅ Process a single interview turn (user answer → AI response)
 export const processInterviewTurn = async (req, res) => {
@@ -283,7 +284,7 @@ export const getInterviewDetail = async (req, res) => {
   }
 };
 
-// ✅ Save completed interview session to analytics - SECURE VERSION
+// ✅ Save completed interview session to analytics - WITH GAMIFICATION
 export const saveInterviewSession = async (req, res) => {
   try {
     // ✅ Get userId from authenticated user (NOT from request body)
@@ -332,10 +333,31 @@ export const saveInterviewSession = async (req, res) => {
       score: overallScore
     });
     
+    // ✅ GAMIFICATION: Update user progress (streaks, XP, badges)
+    let gamificationResult = null;
+    try {
+      gamificationResult = await updateGamification(userId, {
+        overallScore: overallScore || 0,
+        duration: duration || '15m',
+        strengths: strengths || [],
+        weaknesses: weaknesses || []
+      });
+      console.log('🎮 Gamification updated:', {
+        userId,
+        xpGained: gamificationResult?.xpGained,
+        newBadges: gamificationResult?.newBadges,
+        streak: gamificationResult?.progress?.currentStreak
+      });
+    } catch (gamificationError) {
+      // ⚠️ Don't fail the session save if gamification fails
+      console.error('⚠️ Gamification update failed (non-critical):', gamificationError.message);
+    }
+    
     res.json({ 
       success: true, 
       message: 'Interview session saved successfully',
-      session: newSession 
+      session: newSession,
+      gamification: gamificationResult // ✅ Return gamification data to frontend
     });
     
   } catch (error) {
@@ -432,5 +454,29 @@ export const sendInterviewReportEmail = async (req, res) => {
   } catch (error) {
     console.error('Email send error:', error);
     res.status(500).json({ success: false, error: 'Failed to send email. Please check SMTP configuration.' });
+  }
+};
+
+// ✅ Update session with audio
+export const updateInterviewSessionAudio = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { audioRecordingUrl, recordingDuration } = req.body;
+    
+    // Ensure the session belongs to the user
+    const session = await InterviewSession.findOne({ _id: id, userId: req.user._id });
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+
+    session.audioRecordingUrl = audioRecordingUrl || session.audioRecordingUrl;
+    session.recordingDuration = recordingDuration || session.recordingDuration;
+    
+    await session.save();
+
+    res.json({ success: true, session });
+  } catch (error) {
+    console.error('Update session error:', error);
+    res.status(500).json({ success: false, error: 'Failed to update session' });
   }
 };

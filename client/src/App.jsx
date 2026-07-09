@@ -1,4 +1,4 @@
-// src/App.jsx - PRODUCTION READY with AI Avatar Mock Interview
+// src/App.jsx - PRODUCTION READY with PacoBoard Gamification
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
@@ -25,9 +25,8 @@ import History from './pages/History';
 import AboutUs from './pages/AboutUs';
 import AdvancedAnalytics from './pages/AdvancedAnalytics';
 import ErrorReports from './pages/ErrorReports';
-
-// ✅ NEW: AI Avatar Mock Interview
 import MockInterview from './pages/MockInterview';
+import PacoBoard from './pages/PacoBoard'; // ✅ PacoBoard imported
 
 function App() {
   return (
@@ -35,7 +34,7 @@ function App() {
       <AuthProvider>
         <RealTimeProvider>
           <Routes>
-            {/* Public Routes */}
+            {/* ===== PUBLIC ROUTES ===== */}
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
@@ -45,7 +44,9 @@ function App() {
               </MainLayout>
             } />
 
-            {/* Protected Routes */}
+            {/* ===== PROTECTED ROUTES ===== */}
+            
+            {/* Dashboard */}
             <Route path="/dashboard" element={
               <ProtectedRoute>
                 <MainLayout>
@@ -109,11 +110,20 @@ function App() {
               </ProtectedRoute>
             } />
 
-            {/* ✅ NEW: AI Avatar Mock Interview */}
+            {/* ✅ AI Avatar Mock Interview */}
             <Route path="/mock-interview" element={
               <ProtectedRoute>
                 <MainLayout>
                   <MockInterview />
+                </MainLayout>
+              </ProtectedRoute>
+            } />
+
+            {/* ✅ NEW: PacoBoard - Gamification & Progress */}
+            <Route path="/paco-board" element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <PacoBoard />
                 </MainLayout>
               </ProtectedRoute>
             } />
@@ -127,7 +137,7 @@ function App() {
               </ProtectedRoute>
             } />
 
-            {/* Admin Analytics */}
+            {/* ===== ADMIN ROUTES ===== */}
             <Route path="/admin/analytics" element={
               <ProtectedRoute adminOnly={true}>
                 <MainLayout>
@@ -135,8 +145,6 @@ function App() {
                 </MainLayout>
               </ProtectedRoute>
             } />
-
-            {/* Admin Error Reports */}
             <Route path="/admin/errors" element={
               <ProtectedRoute adminOnly={true}>
                 <MainLayout>
@@ -145,7 +153,7 @@ function App() {
               </ProtectedRoute>
             } />
 
-            {/* 404 */}
+            {/* ===== 404 FALLBACK ===== */}
             <Route path="*" element={
               <MainLayout>
                 <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">

@@ -1,139 +1,99 @@
-// server/utils/userTracker.js - Intelligent User Tracking
-import UserActivity from '../models/UserActivity.js';
+// client/src/utils/socket.js - WebSocket Client with Auth
+import { io } from 'socket.io-client';
 
-// ✅ Event batching: Buffer events to reduce DB writes
-const eventBuffer = new Map();
-const BATCH_INTERVAL = 5000; // 5 seconds
-const MAX_BATCH_SIZE = 20;
+let socket;
 
-// ✅ Smart event deduplication
-const dedupeKey = (userId, event, metadata) => {
-  return `${userId}:${event}:${JSON.stringify(metadata).slice(0, 100)}`;
+export const initSocket = (authToken) => {
+  if (socket) return socket; // Prevent duplicate connections
+
+  const socketUrl = import.meta.env.VITE_API_URL?.replace('http', 'ws')?.replace('https', 'wss') 
+    || 'ws://localhost:5000';
+
+  socket = io(socketUrl, {
+    auth: { token: authToken },
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000
+  });
+
+  // Connection event handlers
+  socket.on('connect', () => {
+    console.log('🔌 Socket connected:', socket.id);
+  });
+
+  socket.on('connect_error', (error) => {
+    console.error('❌ Socket connection error:', error.message);
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.log('🔌 Socket disconnected:', reason);
+  });
+
+  return socket;
 };
 
-// ✅ Track a user event (with batching & deduplication)
-export const trackUserEvent = async ({ userId, event, metadata = {} }) => {
-  if (!userId) return; // Skip if no user
-  
-  const key = dedupeKey(userId, event, metadata);
-  
-  // Skip if duplicate within 2 seconds
-  if (eventBuffer.has(key) && Date.now() - eventBuffer.get(key) < 2000) {
-    return;
+export const getSocket = () => {
+  if (!socket) {
+    console.warn('⚠️ Socket not initialized. Call initSocket first.');
+    return null;
   }
-  eventBuffer.set(key, Date.now());
-
-  // Add to batch buffer
-  const batch = eventBuffer.get('BATCH') || [];
-  batch.push({ userId, event, metadata, timestamp: new Date() });
-  eventBuffer.set('BATCH', batch);
-
-  // Flush if batch is full
-  if (batch.length >= MAX_BATCH_SIZE) {
-    await flushEventBatch();
-  }
+  return socket;
 };
 
-// ✅ Flush batched events to database
-export const flushEventBatch = async () => {
-  const batch = eventBuffer.get('BATCH') || [];
-  if (batch.length === 0) return;
-
-  try {
-    // ✅ Bulk insert for performance
-    await UserActivity.insertMany(batch.map(item => ({
-      userId: item.userId,
-      event: item.event,
-      metadata: item.metadata,
-      timestamp: item.timestamp,
-      processed: false
-    })));
-
-    // ✅ Clear buffer
-    eventBuffer.delete('BATCH');
-    console.log(`✅ Flushed ${batch.length} tracking events`);
-    
-  } catch (error) {
-    console.error('❌ Failed to flush tracking events:', error);
-    // Keep events in buffer for retry on next flush
+export const disconnectSocket = () => {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
   }
 };
 
-// ✅ Start auto-flush interval
-export const startTrackingService = () => {
-  setInterval(flushEventBatch, BATCH_INTERVAL);
-  console.log('🔄 User tracking service started (batch interval: 5s)');
+// ✅ Helper: Join interview room for real-time coaching
+export const joinInterviewRoom = (sessionId) => {
+  const socket = getSocket();
+  if (socket && sessionId) {
+    socket.emit('join-interview', sessionId);
+    console.log(`👥 Joined interview room: ${sessionId}`);
+  }
 };
 
-// ✅ Get real-time user insights (for dashboard)
-export const getUserInsights = async (userId, timeRange = '1h') => {
-  const now = new Date();
-  const ranges = {
-    '1h': new Date(now - 60 * 60 * 1000),
-    '24h': new Date(now - 24 * 60 * 60 * 1000),
-    '7d': new Date(now - 7 * 24 * 60 * 60 * 1000)
-  };
-  const since = ranges[timeRange] || ranges['1h'];
-
-  const activities = await UserActivity.find({
-    userId,
-    timestamp: { $gte: since }
-  }).sort({ timestamp: -1 }).limit(100);
-
-  // ✅ Compute smart insights
-  const insights = {
-    sessionCount: activities.filter(a => a.event === 'user:online').length,
-    featuresUsed: [...new Set(
-      activities
-        .filter(a => a.event === 'feature:interact')
-        .map(a => a.metadata.feature)
-    )],
-    topActions: activities
-      .filter(a => a.event === 'feature:interact')
-      .reduce((acc, curr) => {
-        const key = `${curr.metadata.feature}:${curr.metadata.action}`;
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {}),
-    timeOnPlatform: activities
-      .filter(a => a.event === 'page:view')
-      .reduce((sum, a) => sum + (a.metadata.timeOnPage || 0), 0),
-    errors: activities
-      .filter(a => a.event === 'app:error')
-      .map(a => ({ message: a.metadata.message, severity: a.metadata.severity }))
-  };
-
-  return { activities, insights };
+// ✅ Helper: Request real-time AI coaching hint
+export const requestCoaching = (sessionId, transcript, currentQuestion) => {
+  const socket = getSocket();
+  if (socket && sessionId && transcript && currentQuestion) {
+    socket.emit('request-coaching', { sessionId, transcript, currentQuestion });
+  }
 };
 
-// ✅ Get global real-time analytics (admin)
-export const getGlobalAnalytics = async (limit = 50) => {
-  const recent = await UserActivity.find({})
-    .sort({ timestamp: -1 })
-    .limit(limit)
-    .select('userId event metadata timestamp');
+// ✅ Helper: Request tone/sentiment analysis
+export const analyzeResponse = (sessionId, text) => {
+  const socket = getSocket();
+  if (socket && sessionId && text) {
+    socket.emit('analyze-response', { sessionId, text });
+  }
+};
 
-  // ✅ Aggregate live stats
-  const stats = {
-    activeUsers: new Set(recent
-      .filter(a => a.event === 'user:online')
-      .map(a => a.userId)
-    ).size,
-    eventsPerMinute: recent.filter(a => {
-      const age = Date.now() - new Date(a.timestamp);
-      return age < 60000;
-    }).length,
-    topFeatures: recent
-      .filter(a => a.event === 'feature:interact')
-      .reduce((acc, curr) => {
-        const feature = curr.metadata.feature;
-        acc[feature] = (acc[feature] || 0) + 1;
-        return acc;
-      }, {}),
-    errorRate: recent.length > 0 
-      ? recent.filter(a => a.event === 'app:error').length / recent.length 
-      : 0
-  };
+// ✅ Event listeners for coaching hints
+export const onCoachingHint = (callback) => {
+  const socket = getSocket();
+  if (socket) {
+    socket.on('coaching-hint', callback);
+    return () => socket.off('coaching-hint', callback);
+  }
+};
 
-  return { recent, stats };
+export const onToneAnalysis = (callback) => {
+  const socket = getSocket();
+  if (socket) {
+    socket.on('tone-analysis', callback);
+    return () => socket.off('tone-analysis', callback);
+  }
+};
+
+export const onCoachingError = (callback) => {
+  const socket = getSocket();
+  if (socket) {
+    socket.on('coaching-error', callback);
+    return () => socket.off('coaching-error', callback);
+  }
 };

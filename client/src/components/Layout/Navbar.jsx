@@ -68,7 +68,8 @@ const Navbar = () => {
               🔍 ATS Check
             </Link>
             
-            {/* ✅ NEW: Mock Interview Link */}
+
+            {/* ✅ Mock Interview Link */}
             <Link to="/mock-interview" className={getLinkClass('/mock-interview')}>
               🎭 Mock Interview
             </Link>
@@ -87,6 +88,16 @@ const Navbar = () => {
                 <Link to="/admin/analytics" className={getLinkClass('/admin/analytics')}>
                   📊 Analytics
                 </Link>
+              </>
+            )}
+
+            {/* ✅ PacoBoard Link */}
+            <Link to="/paco-board" className={getLinkClass('/paco-board')}>
+              🏁 PacoBoard
+            </Link>
+
+            {user?.isAdmin && (
+              <>
                 <Link to="/admin/errors" className={getLinkClass('/admin/errors')}>
                   🐛 Errors
                 </Link>
@@ -141,8 +152,9 @@ const Navbar = () => {
           <Link to="/profile" className={getMobileClass('/profile')}>👤</Link>
           <Link to="/resume-analyzer" className={getMobileClass('/resume-analyzer')}>✨</Link>
           <Link to="/ats-checker" className={getMobileClass('/ats-checker')}>🔍</Link>
+
           
-          {/* ✅ NEW: Mobile Mock Interview Link */}
+          {/* ✅ Mobile Mock Interview Link */}
           <Link to="/mock-interview" className={getMobileClass('/mock-interview')}>🎭</Link>
           
           <Link to="/history" className={getMobileClass('/history')}>📈</Link>
@@ -152,6 +164,13 @@ const Navbar = () => {
           {user?.isAdmin && (
             <>
               <Link to="/admin/analytics" className={getMobileClass('/admin/analytics')}>📊</Link>
+            </>
+          )}
+
+          <Link to="/paco-board" className={getMobileClass('/paco-board')}>🏁</Link>
+
+          {user?.isAdmin && (
+            <>
               <Link to="/admin/errors" className={getMobileClass('/admin/errors')}>🐛</Link>
             </>
           )}

@@ -77,3 +77,60 @@ export const getDashboardStats = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// @desc    Get PacoBoard user analytics
+// @route   GET /api/analytics/pacoboard
+// @access  Private/Admin
+export const getPacoBoardAnalytics = async (req, res) => {
+  try {
+    const { days = 30 } = req.query;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(days));
+
+    // Import UserProgress model
+    const UserProgress = (await import('../models/UserProgress.js')).default;
+    const User = (await import('../models/User.js')).default;
+
+    // Get users who accessed PacoBoard
+    const pacoBoardUsers = await UserProgress.find({
+      updatedAt: { $gte: startDate }
+    })
+    .populate('userId', 'name email jobTitle')
+    .sort({ totalXP: -1 })
+    .limit(50);
+
+    // Format response
+    const formattedUsers = pacoBoardUsers.map(user => ({
+      userId: user.userId?._id,
+      name: user.userId?.name,
+      email: user.userId?.email,
+      jobTitle: user.userId?.jobTitle,
+      level: user.level,
+      totalXP: user.totalXP,
+      currentStreak: user.currentStreak,
+      badgesEarned: user.badges?.length || 0,
+      lastAccessed: user.updatedAt,
+      interviewsCompleted: user.totalSessions
+    }));
+
+    // Summary stats
+    const totalPacoBoardUsers = pacoBoardUsers.length;
+    const avgLevel = pacoBoardUsers.reduce((sum, u) => sum + u.level, 0) / (totalPacoBoardUsers || 1);
+    const avgXP = pacoBoardUsers.reduce((sum, u) => sum + u.totalXP, 0) / (totalPacoBoardUsers || 1);
+    const topPerformer = formattedUsers[0] || null;
+
+    res.json({
+      success: true,
+      users: formattedUsers,
+      summary: {
+        totalUsers: totalPacoBoardUsers,
+        avgLevel: Math.round(avgLevel * 10) / 10,
+        avgXP: Math.round(avgXP),
+        topPerformer
+      }
+    });
+  } catch (error) {
+    console.error('PacoBoard Analytics Error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch PacoBoard analytics' });
+  }
+};

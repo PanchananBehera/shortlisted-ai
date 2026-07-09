@@ -70,7 +70,6 @@ router.post('/email-resume', protect, emailResume);
 router.post('/export-ats-report', protect, exportATSReport);
 
 // ✅ INTERVIEW SESSION ROUTES (for analytics)
-router.post('/interview/sessions', protect, saveInterviewSession);  // ✅ Save session after interview
 router.get('/interview/history', protect, getInterviewHistory);      // ✅ Fetch history for analytics
 router.post('/interview/email-report', protect, sendInterviewReportEmail);
 

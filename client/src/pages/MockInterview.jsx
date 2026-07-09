@@ -1,11 +1,25 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import InterviewScene from '../components/InterviewScene';
 import { useTypewriter } from '../hooks/useTypewriter';
 import { useRoboticVoice } from '../hooks/useRoboticVoice';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
+import { useAudioRecorder } from '../hooks/useAudioRecorder'; // ✅ NEW: Audio recording
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/axios';
+// ✅ Gamification imports
+import { useGamification } from '../hooks/useGamification';
+import { GamificationBar } from '../components/gamification/GamificationBar';
+import { AchievementModal } from '../components/gamification/AchievementModal';
+// ✅ WebSocket imports for real-time coaching
+import { 
+  initSocket, 
+  joinInterviewRoom, 
+  requestCoaching, 
+  onCoachingHint, 
+  onCoachingError,
+  disconnectSocket 
+} from '../utils/socket';
 
 export default function MockInterview() {
   const { user } = useAuth();
@@ -30,15 +44,40 @@ export default function MockInterview() {
   const [feedbackData, setFeedbackData] = useState(null);
   const [activeAccordion, setActiveAccordion] = useState(null);
 
+  // ✅ NEW: Session & Recording State
+  const [sessionId, setSessionId] = useState(null);
+  const [liveHints, setLiveHints] = useState([]);
+  const [isRecording, setIsRecording] = useState(false);
+  
+  // ✅ Gamification state
+  const [showAchievement, setShowAchievement] = useState(false);
+  const [achievementData, setAchievementData] = useState(null);
+
   // Refs to prevent double-render startup race conditions
   const hasStartedRef = useRef(false);
   const firstQuestionAskedRef = useRef(false);
   const startTimeRef = useRef(null);
+  const coachingUnsubscribesRef = useRef([]);
 
   // Hooks
   const { speak, stopSpeaking, isSpeaking } = useRoboticVoice();
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  
+  // ✅ Gamification hook
+  const { progress, loading: gamificationLoading, refreshProgress } = useGamification(user?._id);
+  
+  // ✅ Audio recording hook
+  const {
+    isRecording: isAudioRecording,
+    recordingTime,
+    formattedTime,
+    audioBlob,
+    startRecording: startAudioRecording,
+    stopRecording: stopAudioRecording,
+    cancelRecording,
+    resetRecording
+  } = useAudioRecorder();
 
   // Fetch target role from user profile on mount
   useEffect(() => {
@@ -54,6 +93,47 @@ export default function MockInterview() {
     };
     fetchUserProfile();
   }, []);
+
+  // ✅ Initialize WebSocket & join interview room when interview starts
+  useEffect(() => {
+    if (user?.token && interviewStage !== 'setup' && interviewStage !== 'completed') {
+      // Initialize socket with auth token
+      const socket = initSocket(user.token);
+      
+      // Generate session ID for this interview
+      const currentSessionId = `session_${user._id}_${Date.now()}`;
+      setSessionId(currentSessionId);
+      
+      // Join the interview room for real-time coaching
+      joinInterviewRoom(currentSessionId);
+      
+      // Set up coaching hint listener
+      const unsubscribeHint = onCoachingHint((hint) => {
+        setLiveHints(prev => [...prev.slice(-4), { // Keep last 5 hints
+          id: Date.now(),
+          ...hint,
+          acknowledged: false
+        }]);
+        
+        // Show toast notification
+        showCoachingToast(hint.hint, hint.category);
+      });
+      
+      // Set up error listener
+      const unsubscribeError = onCoachingError((error) => {
+        console.warn('Coaching error:', error);
+      });
+      
+      // Store cleanup functions
+      coachingUnsubscribesRef.current = [unsubscribeHint, unsubscribeError];
+      
+      // Cleanup on unmount or interview end
+      return () => {
+        coachingUnsubscribesRef.current.forEach(unsub => unsub?.());
+        // Don't disconnect socket here - keep it alive for dashboard
+      };
+    }
+  }, [user?.token, interviewStage]);
 
   // ✅ Typewriter effect - Faster (15ms) + fixes double-message bug
   const { displayedText, isTyping } = useTypewriter(
@@ -124,11 +204,22 @@ export default function MockInterview() {
     }
   }, [user, interviewStage]);
 
-  // ✅ FIXED: Start interview with proper flow
-  const startInterview = () => {
+  // ✅ FIXED: Start interview with proper flow + AUTO RECORDING
+  const startInterview = async () => {
     if (hasStartedRef.current) return;
     hasStartedRef.current = true;
     startTimeRef.current = Date.now();
+
+    // ✅ AUTO-START RECORDING when interview begins
+    try {
+      await startAudioRecording();
+      setIsRecording(true);
+      console.log('🎙️ Recording started automatically');
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+      // Show user-friendly message
+      alert('🎤 Microphone access needed to record your session! Please allow permissions and try again.');
+    }
 
     const introMessage = `Hi ${user?.name?.split(' ')[0] || 'there'}! I'm your AI career coach. Let's begin the mock interview for the ${targetRole} position${dreamCompany ? ` at ${dreamCompany}` : ''}.`;
     setCurrentMessage(introMessage);
@@ -170,9 +261,48 @@ export default function MockInterview() {
     
     // ✅ Speak the question
     speak(question);
+    
+    // ✅ Request real-time coaching hint for this question
+    if (sessionId && userAnswer) {
+      requestCoaching(sessionId, userAnswer, question);
+    }
   };
 
-  // ✅ FIXED: Handle user answer - proper backend integration
+  // ✅ Show real-time coaching hint as toast notification
+  const showCoachingToast = (hint, category) => {
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = `fixed bottom-6 right-6 z-50 max-w-sm p-4 rounded-2xl border shadow-2xl animate-slide-in ${
+      category === 'structure' ? 'bg-blue-900/90 border-blue-500/50' :
+      category === 'content' ? 'bg-emerald-900/90 border-emerald-500/50' :
+      category === 'delivery' ? 'bg-purple-900/90 border-purple-500/50' :
+      'bg-amber-900/90 border-amber-500/50'
+    }`;
+    
+    toast.innerHTML = `
+      <div class="flex items-start gap-3">
+        <div class="text-2xl">
+          ${category === 'structure' ? '🏗️' : category === 'content' ? '🎯' : category === 'delivery' ? '🗣️' : '💪'}
+        </div>
+        <div class="flex-1">
+          <p class="text-sm font-semibold text-white mb-1">AI Coaching Tip</p>
+          <p class="text-xs text-slate-200">${hint}</p>
+        </div>
+        <button class="text-slate-400 hover:text-white text-lg" onclick="this.parentElement.parentElement.remove()">×</button>
+      </div>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    // Auto-remove after 8 seconds
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transition = 'opacity 0.3s';
+      setTimeout(() => toast.remove(), 300);
+    }, 8000);
+  };
+
+  // ✅ FIXED: Handle user answer - proper backend integration WITH GAMIFICATION + COACHING
   const handleSendAnswer = async () => {
     if (!userAnswer.trim() || isLoading || interviewStage !== 'ready') return;
 
@@ -218,9 +348,15 @@ export default function MockInterview() {
           const seconds = diffSecs % 60;
           const durationStr = `${minutes}m ${seconds}s`;
 
-          // Save the interview session
+          // Stop audio recording if active
+          let finalAudioBlob = audioBlob;
+          if (isAudioRecording) {
+            finalAudioBlob = await stopAudioRecording();
+          }
+
+          // Save the interview session + trigger gamification
           try {
-            await api.post('/interview/sessions', {
+            const saveRes = await api.post('/interview/sessions', {
               userId: user?._id || user?.id,
               targetRole,
               dreamCompany,
@@ -234,6 +370,37 @@ export default function MockInterview() {
               detailedAssessment: evalReport.detailedAssessment || [],
               roadmap: evalReport.roadmap || []
             });
+            
+            // ✅ GAMIFICATION: Handle response if present
+            if (saveRes.data.gamification) {
+              setAchievementData(saveRes.data.gamification);
+              setShowAchievement(true);
+              refreshProgress(); // Update gamification UI
+            }
+            
+            // ✅ Upload audio recording if available
+            if (finalAudioBlob && sessionId && saveRes.data.session?._id) {
+              try {
+                const formData = new FormData();
+                formData.append('audio', finalAudioBlob, `session_${sessionId}.webm`);
+                
+                const uploadRes = await api.post('/audio/upload', formData, {
+                  headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                
+                if (uploadRes.data.success) {
+                  // Update session with audio reference
+                  await api.patch(`/interview/sessions/${saveRes.data.session._id}`, {
+                    audioRecordingUrl: uploadRes.data.fileId,
+                    recordingDuration: recordingTime
+                  });
+                  console.log('✅ Audio recording saved');
+                }
+              } catch (err) {
+                console.error('Failed to upload audio:', err);
+                // Don't block session save if audio upload fails
+              }
+            }
           } catch (saveErr) {
             console.error('Failed to save interview session:', saveErr);
           }
@@ -263,6 +430,11 @@ export default function MockInterview() {
           
           // ✅ Speak AI response
           speak(aiReply);
+          
+          // ✅ Request real-time coaching for next question
+          if (sessionId && userResponse) {
+            requestCoaching(sessionId, userResponse, aiReply);
+          }
         } else {
           throw new Error(res.data.error || 'Failed to process turn');
         }
@@ -288,6 +460,14 @@ export default function MockInterview() {
     setInterviewStage('completed');
     setAvatarState('nodding');
     speak(closingMessage, () => setAvatarState('idle'));
+    
+    // Stop recording if active
+    if (isAudioRecording) {
+      stopAudioRecording();
+    }
+    
+    // Cleanup WebSocket listeners
+    coachingUnsubscribesRef.current.forEach(unsub => unsub?.());
   };
 
   const handleKeyPress = (e) => {
@@ -303,6 +483,16 @@ export default function MockInterview() {
     } else {
       setUserAnswer('');
       startListening();
+    }
+  };
+
+  const handleRecordingToggle = async () => {
+    if (isAudioRecording) {
+      await stopAudioRecording();
+      setIsRecording(false);
+    } else {
+      await startAudioRecording();
+      setIsRecording(true);
     }
   };
 
@@ -366,6 +556,9 @@ export default function MockInterview() {
               </span>
               {isSpeaking && <span className="ml-auto text-xs text-green-400 font-bold">🔊</span>}
             </div>
+
+            {/* ✅ NEW: Gamification Bar */}
+            {!gamificationLoading && progress && <GamificationBar progress={progress} />}
 
             {/* Tips - Collapsible on mobile to save space */}
             <details className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
@@ -463,6 +656,42 @@ export default function MockInterview() {
             {/* CONVERSATION STAGE */}
             {interviewStage !== 'completed' && interviewStage !== 'setup' && (
               <div className="flex flex-col gap-3">
+                
+                {/* ✅ Live Coaching Hints Panel */}
+                {liveHints.length > 0 && (
+                  <div className="bg-emerald-900/30 border border-emerald-500/30 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-emerald-400">💡 AI Coaching Tips</span>
+                      <button 
+                        onClick={() => setLiveHints([])}
+                        className="text-xs text-slate-400 hover:text-white transition"
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                    <div className="space-y-2 max-h-32 overflow-y-auto">
+                      {liveHints.map((hint) => (
+                        <div 
+                          key={hint.id}
+                          className={`text-xs p-2 rounded-lg border ${
+                            hint.category === 'structure' ? 'bg-blue-900/30 border-blue-500/30' :
+                            hint.category === 'content' ? 'bg-emerald-900/30 border-emerald-500/30' :
+                            hint.category === 'delivery' ? 'bg-purple-900/30 border-purple-500/30' :
+                            'bg-amber-900/30 border-amber-500/30'
+                          }`}
+                        >
+                          <span className="font-semibold text-white">
+                            {hint.category === 'structure' ? '🏗️ Structure:' : 
+                             hint.category === 'content' ? '🎯 Content:' : 
+                             hint.category === 'delivery' ? '🗣️ Delivery:' : '💪 Confidence:'}
+                          </span>
+                          <span className="text-slate-200 ml-2">{hint.hint}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
                 {/* Chat Area - Viewport relative height for mobile */}
                 <div className="bg-gray-800 rounded-xl p-3 h-[45vh] sm:h-[55vh] md:h-[450px] overflow-y-auto space-y-3 border border-gray-700 hide-scrollbar">
                   {conversation.map((msg, idx) => (
@@ -501,6 +730,28 @@ export default function MockInterview() {
                 {/* Input Controls - Mobile optimized with larger touch targets */}
                 <div className="bg-gray-800 rounded-xl p-3 border border-gray-700 space-y-2.5">
                   <div className="flex gap-2">
+                    
+                    {/* ✅ Audio Recording Toggle */}
+                    <button
+                      onClick={handleRecordingToggle}
+                      disabled={!canInteract}
+                      className={`p-3 rounded-lg transition shrink-0 flex items-center justify-center text-xl min-w-[44px] min-h-[44px] ${
+                        isAudioRecording 
+                          ? 'bg-red-600 text-white animate-pulse' 
+                          : 'bg-gray-700 text-gray-200 hover:bg-gray-655'
+                      } disabled:opacity-40`}
+                      title={isAudioRecording ? "Stop recording" : "Record session for playback"}
+                      aria-label={isAudioRecording ? "Stop recording" : "Start recording"}
+                    >
+                      {isAudioRecording ? '⏹️' : '⏺️'}
+                    </button>
+                    
+                    {/* Recording Timer */}
+                    {isAudioRecording && (
+                      <span className="text-xs text-red-400 font-mono animate-pulse flex items-center">
+                        REC {formattedTime}
+                      </span>
+                    )}
                     
                     {/* Microphone - 44px min touch target */}
                     <button
@@ -560,7 +811,7 @@ export default function MockInterview() {
               <div className="space-y-6 animate-fade-in">
                 
                 {/* Score Banner */}
-                <div className="bg-gradient-to-br from-green-955/40 to-gray-800 rounded-2xl p-6 border border-green-500/20 text-center space-y-4 shadow-xl">
+                <div className="bg-gradient-to-br from-green-950/40 to-gray-800 rounded-2xl p-6 border border-green-500/20 text-center space-y-4 shadow-xl">
                   <div className="inline-block relative">
                     <div className="w-28 h-28 rounded-full border-4 border-gray-700 flex flex-col items-center justify-center bg-gray-900 shadow-lg">
                       <span className="text-3xl font-extrabold text-green-400">{feedbackData.overallScore || 0}%</span>
@@ -661,7 +912,7 @@ export default function MockInterview() {
                               <p className="text-gray-300">{item.assessment}</p>
                             </div>
 
-                            <div className="bg-green-955/20 rounded-lg p-4 border border-green-900/20 space-y-1">
+                            <div className="bg-green-950/20 rounded-lg p-4 border border-green-900/20 space-y-1">
                               <span className="text-[10px] text-green-400 font-bold uppercase tracking-wider block">PacoBot's Ideal STAR Answer:</span>
                               <p className="text-gray-300 italic">"{item.idealAnswer}"</p>
                             </div>
@@ -685,9 +936,9 @@ export default function MockInterview() {
                           <div className="flex items-center justify-between gap-4">
                             <strong className="text-white text-sm font-bold truncate">{step.skill}</strong>
                             <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase border shrink-0 ${
-                              step.priority === 'Critical' ? 'bg-red-955 text-red-400 border-red-900/30' :
-                              step.priority === 'Important' ? 'bg-yellow-955 text-yellow-400 border-yellow-900/30' :
-                              'bg-green-955 text-green-400 border-green-900/30'
+                              step.priority === 'Critical' ? 'bg-red-950 text-red-400 border-red-900/30' :
+                              step.priority === 'Important' ? 'bg-yellow-950 text-yellow-400 border-yellow-900/30' :
+                              'bg-green-950 text-green-400 border-green-900/30'
                             }`}>
                               {step.priority}
                             </span>
@@ -702,6 +953,25 @@ export default function MockInterview() {
 
                 {/* Action Controls */}
                 <div className="flex flex-col sm:flex-row gap-3 pt-3">
+                  {audioBlob && (
+                    <button
+                      onClick={() => {
+                        const url = window.URL.createObjectURL(audioBlob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        const date = new Date().toISOString().split('T')[0];
+                        const safeRole = targetRole.replace(/\s+/g, '_');
+                        a.download = `Interview_${safeRole}_${date}.webm`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                      }}
+                      className="flex-1 py-3.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold rounded-lg transition text-center shadow-lg shadow-blue-900/20 flex items-center justify-center gap-2"
+                    >
+                      📥 Download
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setConversation([]);
@@ -733,6 +1003,13 @@ export default function MockInterview() {
           </div>
         </div>
       </main>
+
+      {/* ✅ NEW: Achievement Modal */}
+      <AchievementModal 
+        show={showAchievement} 
+        onClose={() => setShowAchievement(false)} 
+        {...achievementData} 
+      />
     </div>
   );
 }

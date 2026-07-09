@@ -15,12 +15,17 @@
   /* 📱 Mobile-First Global Fixes */
   @media (max-width: 640px) {
     /* Prevent iOS Safari zoom on input focus */
-    input, textarea, select {
+    input,
+    textarea,
+    select {
       font-size: 16px !important;
     }
     
     /* Apple/Google minimum touch target standard (44x44px) */
-    button, [role="button"], [type="button"], a {
+    button,
+    [role="button"],
+    [type="button"],
+    a {
       min-height: 44px;
       min-width: 44px;
     }
@@ -43,8 +48,40 @@
   .hide-scrollbar::-webkit-scrollbar {
     display: none;
   }
+  
   .hide-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+
+  /* ✅ Slide-in animation for coaching toasts */
+  @keyframes slide-in {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-slide-in {
+    animation: slide-in 0.3s ease-out forwards;
+  }
+
+  /* ✅ Pulse animation for recording indicator */
+  @keyframes pulse-red {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  .animate-pulse-red {
+    animation: pulse-red 1s ease-in-out infinite;
   }
 }

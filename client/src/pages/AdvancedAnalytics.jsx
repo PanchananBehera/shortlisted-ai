@@ -20,6 +20,9 @@ const AdvancedAnalytics = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showErrorModal, setShowErrorModal] = useState(false);
   
+  // ✅ PacoBoard Analytics State
+  const [pacoBoardData, setPacoBoardData] = useState(null);
+  const [pacoBoardLoading, setPacoBoardLoading] = useState(false);
   // Interview History
   const [interviewHistory, setInterviewHistory] = useState([]);
   const [interviewLoading, setInterviewLoading] = useState(false);
@@ -88,7 +91,26 @@ const AdvancedAnalytics = () => {
       setInterviewLoading(false);
     }
   };
-
+  // ✅ Fetch PacoBoard User Data
+  const fetchPacoBoardData = async () => {
+  setPacoBoardLoading(true);
+  try {
+    const res = await api.get(`/user/pacoboard-analytics?days=${timeRange}`);
+    setPacoBoardData(res.data);
+  } catch (err) {
+    console.error('Failed to fetch PacoBoard data:', err);
+  } finally {
+    setPacoBoardLoading(false);
+  }
+};
+// Fetch data
+useEffect(() => {
+  fetchData();
+  if (user?._id) {
+    fetchInterviewHistory();
+    fetchPacoBoardData(); // ✅ Add this line
+  }
+}, [timeRange, user]);
   // 📈 CHART DATA PREPARATION
   const chartData = useMemo(() => {
     if (!interviewHistory.length) return [];
@@ -398,12 +420,21 @@ const AdvancedAnalytics = () => {
         <div className="bg-slate-800/50 border border-slate-700 p-4 sm:p-6 rounded-2xl space-y-4 sm:space-y-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">📊 Interview Analytics</h3>
-            <div className="flex gap-2 w-full sm:w-auto">
-              <button onClick={fetchInterviewHistory} className="text-xs text-purple-400 hover:text-purple-300 transition px-3 py-2 min-h-[44px]">🔄</button>
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+              <button onClick={fetchInterviewHistory} className="flex items-center gap-2 text-sm font-medium text-purple-400 hover:text-purple-300 transition px-3 py-2 min-h-[44px] bg-purple-500/10 hover:bg-purple-500/20 rounded-lg border border-purple-500/20">
+                <span className="text-xl">🔄</span>
+                <span>Refresh</span>
+              </button>
               {interviewHistory.length > 0 && (
                 <>
-                  <button onClick={exportToPDF} className="text-xs text-emerald-400 hover:text-emerald-300 transition px-3 py-2 min-h-[44px]">📄</button>
-                  <button onClick={() => setShowEmailModal(true)} className="text-xs text-blue-400 hover:text-blue-300 transition px-3 py-2 min-h-[44px]">📧</button>
+                  <button onClick={exportToPDF} className="flex items-center gap-2 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition px-3 py-2 min-h-[44px] bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg border border-emerald-500/20">
+                    <span className="text-xl">📄</span>
+                    <span>Export PDF</span>
+                  </button>
+                  <button onClick={() => setShowEmailModal(true)} className="flex items-center gap-2 text-sm font-medium text-blue-400 hover:text-blue-300 transition px-3 py-2 min-h-[44px] bg-blue-500/10 hover:bg-blue-500/20 rounded-lg border border-blue-500/20">
+                    <span className="text-xl">📧</span>
+                    <span>Email Report</span>
+                  </button>
                 </>
               )}
             </div>
@@ -469,6 +500,128 @@ const AdvancedAnalytics = () => {
                   </div>
                 </div>
               </div>
+              {/* PacoBoard User Analytics */}
+<div className="bg-slate-800/50 border border-slate-700 p-4 sm:p-6 rounded-2xl space-y-6">
+  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+    <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2">
+      <span className="text-2xl">🏆</span>
+      PacoBoard Engagement
+    </h3>
+    <button 
+      onClick={fetchPacoBoardData}
+      className="text-xs text-purple-400 hover:text-purple-300 transition px-3 py-2 min-h-[44px]"
+    >
+      🔄 Refresh
+    </button>
+  </div>
+
+  {pacoBoardLoading ? (
+    <div className="flex items-center gap-2 text-slate-400 py-8 justify-center">
+      <div className="w-4 h-4 border-2 border-slate-600 border-t-purple-500 rounded-full animate-spin" />
+      Loading PacoBoard data...
+    </div>
+  ) : pacoBoardData?.users?.length > 0 ? (
+    <>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
+        <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4 border border-slate-700">
+          <div className="text-xl sm:text-2xl font-bold text-purple-400">{pacoBoardData.summary.totalUsers}</div>
+          <div className="text-[10px] sm:text-xs text-slate-400 mt-1">Active Users</div>
+        </div>
+        <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4 border border-slate-700">
+          <div className="text-xl sm:text-2xl font-bold text-cyan-400">{pacoBoardData.summary.avgLevel}</div>
+          <div className="text-[10px] sm:text-xs text-slate-400 mt-1">Avg Level</div>
+        </div>
+        <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4 border border-slate-700">
+          <div className="text-xl sm:text-2xl font-bold text-amber-400">{pacoBoardData.summary.avgXP}</div>
+          <div className="text-[10px] sm:text-xs text-slate-400 mt-1">Avg XP</div>
+        </div>
+        <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4 border border-slate-700">
+          <div className="text-xl sm:text-2xl font-bold text-green-400">
+            {pacoBoardData.summary.topPerformer?.badgesEarned || 0}
+          </div>
+          <div className="text-[10px] sm:text-xs text-slate-400 mt-1">Top Badges</div>
+        </div>
+      </div>
+
+      {/* Top Performer Highlight */}
+      {pacoBoardData.summary.topPerformer && (
+        <div className="bg-gradient-to-r from-purple-900/30 to-pink-900/30 border border-purple-500/30 rounded-xl p-4 sm:p-5">
+          <h4 className="text-sm font-bold text-purple-300 mb-3">🏆 Top Performer</h4>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-xl font-bold">
+              {pacoBoardData.summary.topPerformer.name?.[0] || 'U'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-white truncate">{pacoBoardData.summary.topPerformer.name}</p>
+              <p className="text-xs text-slate-400 truncate">{pacoBoardData.summary.topPerformer.email}</p>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className="text-lg font-bold text-purple-400">Level {pacoBoardData.summary.topPerformer.level}</p>
+              <p className="text-xs text-slate-400">{pacoBoardData.summary.topPerformer.totalXP} XP</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User List Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs sm:text-sm">
+          <thead className="text-[10px] sm:text-xs text-slate-400 uppercase border-b border-slate-700">
+            <tr>
+              <th className="text-left py-3 px-2 sm:px-4">User</th>
+              <th className="text-left py-3 px-2 sm:px-4 hidden sm:table-cell">Level</th>
+              <th className="text-left py-3 px-2 sm:px-4">XP</th>
+              <th className="text-left py-3 px-2 sm:px-4 hidden sm:table-cell">Streak</th>
+              <th className="text-left py-3 px-2 sm:px-4 hidden md:table-cell">Badges</th>
+              <th className="text-left py-3 px-2 sm:px-4 hidden lg:table-cell">Interviews</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800">
+            {pacoBoardData.users.slice(0, 10).map((user, idx) => (
+              <tr key={idx} className="hover:bg-slate-800/50 transition">
+                <td className="py-3 px-2 sm:px-4">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center text-[10px] sm:text-xs font-bold flex-shrink-0">
+                      {user.name?.[0] || 'U'}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-white text-[10px] sm:text-sm truncate">{user.name || 'Anonymous'}</p>
+                      <p className="text-[9px] sm:text-xs text-slate-500 truncate hidden sm:block">{user.email}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="py-3 px-2 sm:px-4 hidden sm:table-cell">
+                  <span className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded text-[9px] sm:text-xs font-bold">
+                    Lvl {user.level}
+                  </span>
+                </td>
+                <td className="py-3 px-2 sm:px-4 text-cyan-400 font-mono text-[10px] sm:text-sm">{user.totalXP}</td>
+                <td className="py-3 px-2 sm:px-4 hidden sm:table-cell">
+                  <span className="flex items-center gap-1 text-orange-400 text-[10px] sm:text-xs">
+                    🔥 {user.currentStreak}
+                  </span>
+                </td>
+                <td className="py-3 px-2 sm:px-4 hidden md:table-cell text-pink-400 text-[10px] sm:text-xs">{user.badgesEarned}</td>
+                <td className="py-3 px-2 sm:px-4 hidden lg:table-cell text-slate-300 text-[10px] sm:text-xs">{user.interviewsCompleted}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {pacoBoardData.users.length > 10 && (
+          <p className="text-[10px] sm:text-xs text-slate-500 text-center py-3">
+            +{pacoBoardData.users.length - 10} more users
+          </p>
+        )}
+      </div>
+    </>
+  ) : (
+    <div className="text-center py-8 text-slate-400">
+      <p>No PacoBoard activity yet</p>
+      <p className="text-xs mt-1">Users will appear here once they start using PacoBoard</p>
+    </div>
+  )}
+</div>
 
               {/* Session Comparison Selection */}
               {selectedSessions.length > 0 && (
