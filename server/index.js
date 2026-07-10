@@ -51,7 +51,8 @@ const getAllowedOrigins = () => {
     'http://127.0.0.1:5173',
     'http://127.0.0.1:5174',
     'http://[::1]:5173',
-    'http://[::1]:5174'
+    'http://[::1]:5174',
+    'https://shortlisted-ai-job-alpha.vercel.app'
   ];
   const rawUrl = process.env.FRONTEND_URL;
   
