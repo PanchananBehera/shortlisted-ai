@@ -4,12 +4,14 @@ import Navbar from './Navbar';
 
 const MainLayout = ({ children }) => {
   return (
-    <div className="min-h-screen bg-surface-light dark:bg-surface-dark transition-colors duration-200">
+    <>
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* ✅ REMOVED min-h-screen to avoid conflict with App.jsx padding */}
+      {/* ✅ Added pt-4 on mobile to account for mobile header height */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pt-4 md:pt-8">
         {children}
       </main>
-    </div>
+    </>
   );
 };
 
