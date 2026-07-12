@@ -3,13 +3,15 @@
 @tailwind utilities;
 
 @layer base {
-  /* ✅ Your existing dark mode setup */
+  /* ✅ FIX 1: Force Professional Sans-Serif Font globally */
   body {
-    @apply bg-surface-light text-gray-900 transition-colors duration-200;
+    @apply bg-gray-50 text-slate-900 antialiased transition-colors duration-300;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   
-  .dark body {
-    @apply bg-surface-dark text-gray-100;
+  /* ✅ FIX 2: Dark mode applied to html/body */
+  html.dark body {
+    @apply bg-slate-950 text-slate-100;
   }
 
   /* 📱 Mobile-First Global Fixes */
@@ -52,6 +54,21 @@
   .hide-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+
+  /* Custom Scrollbar for Professional Look (Desktop) */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 dark:bg-slate-700 rounded-full;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400 dark:bg-slate-600;
   }
 
   /* ✅ Slide-in animation for coaching toasts */

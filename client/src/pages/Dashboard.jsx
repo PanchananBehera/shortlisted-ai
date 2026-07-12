@@ -26,9 +26,23 @@ const Dashboard = () => {
     try {
       setLoading(true);
       const result = await analyticsService.getDashboardStats();
-      setData(result);
+      // Ensure we always have a valid data shape even if API returns partial data
+      setData({
+        stats: { total: 0, interviews: 0, offers: 0, rejected: 0 },
+        statusDistribution: [],
+        activity: [],
+        recentApplications: [],
+        ...result,
+      });
     } catch (error) {
       console.error("Failed to load dashboard", error);
+      // For new users or API errors, show empty dashboard instead of blank screen
+      setData({
+        stats: { total: 0, interviews: 0, offers: 0, rejected: 0 },
+        statusDistribution: [],
+        activity: [],
+        recentApplications: [],
+      });
       setErrorObj(error.message || String(error));
     } finally {
       setLoading(false);
@@ -39,21 +53,6 @@ const Dashboard = () => {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
-      </div>
-    );
-  }
-
-  if (!data) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-gray-500 dark:text-gray-400">
-        <p className="text-lg">⚠️ Could not load dashboard data.</p>
-        <p className="text-sm text-red-500">{errorObj}</p>
-        <button
-          onClick={fetchDashboardData}
-          className="mt-4 px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-full font-medium transition"
-        >
-          Retry
-        </button>
       </div>
     );
   }

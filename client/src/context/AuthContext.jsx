@@ -71,7 +71,8 @@ export const AuthProvider = ({ children }) => {
         throw new Error(res.data.error || 'Login failed');
       }
 
-      const { token: newToken, ...userData } = res.data;
+      const newToken = res.data.token;
+      const userData = res.data.user || res.data;
       
       // Save to localStorage
       localStorage.setItem('token', newToken);
@@ -99,7 +100,8 @@ export const AuthProvider = ({ children }) => {
         throw new Error(res.data.error || 'Registration failed');
       }
 
-      const { token: newToken, ...userData } = res.data;
+      const newToken = res.data.token;
+      const userData = res.data.user || res.data;
       
       // Save to localStorage
       localStorage.setItem('token', newToken);
