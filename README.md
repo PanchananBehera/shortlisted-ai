@@ -2,7 +2,7 @@
 
 > Ace your dream job interview with PacoBot, your personalized AI mock interview partner.
 
-🔗 **Live Demo**: [https://shortlisted-ai.vercel.app](https://shortlisted-ai.vercel.app)  
+🔗 **Live Demo**: [https://shortlisted-ai-job-alpha.vercel.app/](https://shortlisted-ai-job-alpha.vercel.app/)  
 🤖 **Backend**: [https://shortlisted-ai-app.onrender.com](https://shortlisted-ai-app.onrender.com)
 
 ---
