@@ -453,9 +453,14 @@ export default function MockInterview() {
           
           <div className="flex items-center gap-3">
             {interviewStage !== 'setup' && interviewStage !== 'completed' && (
-              <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                Q<span className="text-green-400 font-bold">{Math.min(questionCount + 1, 5)}</span>/5
-              </span>
+              <>
+                <span className={`hidden lg:inline-block text-sm mr-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Role: {targetRole}
+                </span>
+                <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Q<span className="text-green-400 font-bold">{Math.min(questionCount + 1, 5)}</span>/5
+                </span>
+              </>
             )}
             <button 
               onClick={() => navigate('/dashboard')}
@@ -500,8 +505,8 @@ export default function MockInterview() {
             {/* Gamification Bar */}
             {!gamificationLoading && progress && <GamificationBar progress={progress} />}
 
-            {/* Tips */}
-            <details className={`${isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-100 border-gray-200'} rounded-lg p-3 border`}>
+            {/* Tips (Mobile Only) */}
+            <details className={`lg:hidden ${isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-100 border-gray-200'} rounded-lg p-3 border`}>
               <summary className={`text-xs font-bold uppercase tracking-wider text-green-400 cursor-pointer select-none flex items-center gap-1`}>
                 💡 Tips <span className={`${isDark ? 'text-gray-500' : 'text-gray-600'} transition-transform duration-200`}>▼</span>
               </summary>
@@ -742,6 +747,18 @@ export default function MockInterview() {
                     <p className="text-[10px] text-yellow-500 text-center">⚠️ Voice not supported in this browser</p>
                   )}
                   <p className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-600'} text-center`}>💡 Tip: Use STAR method (Situation, Task, Action, Result)</p>
+                </div>
+
+                {/* Tips (Desktop Only) */}
+                <div className={`hidden lg:block ${isDark ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-100 border-gray-200'} rounded-xl p-4 border mt-1`}>
+                  <h3 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-gray-900'} mb-2 flex items-center gap-2`}>
+                    🎯 Interview Tips
+                  </h3>
+                  <ul className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'} space-y-1.5 pl-1`}>
+                    <li>• Keep answers under 2 minutes</li>
+                    <li>• Use specific examples with measurable results</li>
+                    <li>• Follow the STAR method (Situation, Task, Action, Result)</li>
+                  </ul>
                 </div>
               </div>
             )}
